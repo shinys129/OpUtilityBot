@@ -137,8 +137,10 @@ async function buildCategoryButtons(reservations: any[]): Promise<ActionRowBuild
   }
 
   // Special handling for Regionals
-  const regionalReservations = reservations.filter(r => r.category === 'Regionals');
-  const hasStandardRegional = regionalReservations.some(r => !r.subCategory || r.subCategory === 'none');
+  // Only count reservations that have a subCategory set (user has made their choice)
+  const regionalReservations = reservations.filter(r => r.category === 'Regionals' && r.subCategory);
+  // Standard Regional is explicitly set as 'standard' or similar, not null
+  const hasStandardRegional = regionalReservations.some(r => r.subCategory === 'standard' || r.subCategory === 'none');
   const takenSubcategories = regionalReservations.map(r => r.subCategory?.toLowerCase()).filter(Boolean);
   const allThreeTaken = takenSubcategories.includes('galarian') && 
                         takenSubcategories.includes('alolan') && 
@@ -529,6 +531,9 @@ async function handleSlashCommand(interaction: any) {
       return;
     }
 
+    // Defer reply immediately to prevent timeout
+    await interaction.deferReply({ ephemeral: true });
+
     // Find the org message BEFORE clearing data
     let orgMessage: DiscordMessage | null = null;
     if (interaction.channel instanceof TextChannel) {
@@ -555,13 +560,13 @@ async function handleSlashCommand(interaction: any) {
           .setTimestamp();
 
         await orgMessage.edit({ embeds: [closedEmbed], components: [] });
-        await interaction.reply({ content: "✅ Organization closed and reservations cleared. Use /startorg to begin a fresh round.", ephemeral: true });
+        await interaction.editReply({ content: "✅ Organization closed and reservations cleared. Use /startorg to begin a fresh round." });
       } catch (err) {
         console.error("Failed to edit org message during endorg:", err);
-        await interaction.reply({ content: "Data cleared but failed to close the embed. You may need to delete it manually.", ephemeral: true });
+        await interaction.editReply({ content: "Data cleared but failed to close the embed. You may need to delete it manually." });
       }
     } else {
-      await interaction.reply({ content: "Data cleared. No org embed was found to close.", ephemeral: true });
+      await interaction.editReply({ content: "Data cleared. No org embed was found to close." });
     }
   }
 
@@ -925,7 +930,8 @@ async function handleButton(interaction: any) {
     const sub = customId.replace('sub_', '');
     const reservation = await storage.getReservationByUser(user.id);
     if (reservation && reservation.category === 'Regionals') {
-      await storage.updateReservation(reservation.id, { subCategory: sub === 'none' ? null : sub });
+      // Set 'standard' for Standard Regional so we can detect it (not null)
+      await storage.updateReservation(reservation.id, { subCategory: sub === 'none' ? 'standard' : sub });
       // If Galarian, prompt the user immediately to pick which bird (ephemeral)
       if (sub === 'galarian') {
         const birdRow = new ActionRowBuilder<ButtonBuilder>()
