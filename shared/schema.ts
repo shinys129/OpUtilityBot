@@ -28,10 +28,18 @@ export const channelChecks = pgTable("channel_checks", {
   updatedAt: timestamp("updated_at").defaultNow(),
 });
 
+export const orgState = pgTable("org_state", {
+  id: serial("id").primaryKey(),
+  channelId: text("channel_id").notNull(), // Discord channel ID where the org embed is
+  messageId: text("message_id").notNull(), // Discord message ID of the org embed
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
 // Relations and Schemas
 export const insertUserSchema = createInsertSchema(users).omit({ id: true });
 export const insertReservationSchema = createInsertSchema(reservations).omit({ id: true, createdAt: true });
 export const insertChannelCheckSchema = createInsertSchema(channelChecks).omit({ id: true, updatedAt: true });
+export const insertOrgStateSchema = createInsertSchema(orgState).omit({ id: true, updatedAt: true });
 
 export type User = typeof users.$inferSelect;
 export type InsertUser = z.infer<typeof insertUserSchema>;
@@ -41,6 +49,9 @@ export type InsertReservation = z.infer<typeof insertReservationSchema>;
 
 export type ChannelCheck = typeof channelChecks.$inferSelect;
 export type InsertChannelCheck = z.infer<typeof insertChannelCheckSchema>;
+
+export type OrgState = typeof orgState.$inferSelect;
+export type InsertOrgState = z.infer<typeof insertOrgStateSchema>;
 
 // Detailed response type including user info
 export type ReservationWithUser = Reservation & { user: User };
