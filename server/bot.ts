@@ -834,11 +834,11 @@ async function handleButton(interaction: any) {
     // Special handling for Regionals - allow multiple subcategories but not Standard Regional with others
     if (categoryName === 'Regionals') {
       const regionalReservations = existingReservations.filter(r => r.category === 'Regionals');
-      const hasStandardRegional = regionalReservations.some(r => !r.subCategory || r.subCategory === 'none');
+      const hasStandardRegional = regionalReservations.some(r => r.subCategory === 'standard' || r.subCategory === 'none');
       
       // Block if someone has Standard Regional
       if (hasStandardRegional) {
-        const standardHolder = regionalReservations.find(r => !r.subCategory || r.subCategory === 'none');
+        const standardHolder = regionalReservations.find(r => r.subCategory === 'standard' || r.subCategory === 'none');
         if (standardHolder?.user.discordId === userId) {
           await interaction.reply({ content: `You already have a Standard Regional reservation. Use /cancelres to release it first.`, ephemeral: true });
         } else {
@@ -847,8 +847,9 @@ async function handleButton(interaction: any) {
         return;
       }
       
-      // Check which subcategories are taken
-      const takenSubcategories = regionalReservations.map(r => r.subCategory?.toLowerCase()).filter(Boolean);
+      // Check which subcategories are taken (only count confirmed ones with subCategory set)
+      const confirmedRegionals = regionalReservations.filter(r => r.subCategory);
+      const takenSubcategories = confirmedRegionals.map(r => r.subCategory?.toLowerCase()).filter(Boolean);
       const allThreeTaken = takenSubcategories.includes('galarian') && 
                             takenSubcategories.includes('alolan') && 
                             takenSubcategories.includes('hisuian');
@@ -859,19 +860,8 @@ async function handleButton(interaction: any) {
         return;
       }
       
-      // Check if user already has a Regional reservation
-      const userRegional = regionalReservations.find(r => r.user.discordId === userId);
-      if (userRegional) {
-        await interaction.reply({ content: `You already have a Regional reservation (${userRegional.subCategory || 'Standard'}). Use /cancelres to release it first.`, ephemeral: true });
-        return;
-      }
-      
-      // Create reservation and show subcategory options
-      await storage.createReservation({
-        userId: user.id,
-        category: categoryName,
-        channelRange: range,
-      });
+      // Check if user already has a pending Regional reservation (no subCategory yet)
+      const userPendingRegional = regionalReservations.find(r => r.user.discordId === userId && !r.subCategory);
       
       // Build subcategory buttons - hide ones already taken, hide Standard if any subcategory is taken
       const buttons: ButtonBuilder[] = [];
@@ -885,8 +875,23 @@ async function handleButton(interaction: any) {
         buttons.push(new ButtonBuilder().setCustomId('sub_hisuian').setLabel('Hisuian').setStyle(ButtonStyle.Primary));
       }
       // Only show Standard Regional if no one has picked any subcategory yet
-      if (regionalReservations.length === 0) {
+      if (confirmedRegionals.length === 0) {
         buttons.push(new ButtonBuilder().setCustomId('sub_none').setLabel('Standard Regional').setStyle(ButtonStyle.Secondary));
+      }
+      
+      // If no buttons available, all are taken
+      if (buttons.length === 0) {
+        await interaction.reply({ content: `All Regional subcategories are taken. Someone must use /cancelres first.`, ephemeral: true });
+        return;
+      }
+      
+      // Only create a new reservation if user doesn't have a pending one
+      if (!userPendingRegional) {
+        await storage.createReservation({
+          userId: user.id,
+          category: categoryName,
+          channelRange: range,
+        });
       }
       
       const subRow = new ActionRowBuilder<ButtonBuilder>().addComponents(buttons);
