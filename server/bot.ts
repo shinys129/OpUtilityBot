@@ -343,40 +343,29 @@ async function handleSlashCommand(interaction: any) {
     }
 
     try {
-      // First, try to get the message ID from database
-      const orgState = await storage.getOrgState();
-      let orgMessage = null;
+      await interaction.deferReply({ ephemeral: true });
 
-      if (orgState && orgState.channelId === interaction.channel.id) {
-        try {
-          orgMessage = await interaction.channel.messages.fetch(orgState.messageId);
-        } catch (e) {
-          console.log("Stored message ID not found, falling back to search");
-        }
-      }
-
-      // If not found in database or fetch failed, search recent messages
+      const orgMessage = await findOrgMessage(interaction.channel);
       if (!orgMessage) {
-        const messages = await interaction.channel.messages.fetch({ limit: 50 });
-        orgMessage = messages.find((m: DiscordMessage) => 
-          m.author.id === client?.user?.id && 
-          m.embeds.length > 0 && 
-          m.embeds[0].title && 
-          (m.embeds[0].title.includes('Pokemon Reservation') || m.embeds[0].title.includes('Reservation Hub'))
-        );
+        await interaction.editReply({ content: "❌ No active org embed found in this channel. Use `/reloadorg` to recreate it or `/startorg` to create a new one." });
+        return;
       }
 
-      if (orgMessage) {
-        await updateOrgEmbed(interaction.channel, orgMessage.id);
-        // Update stored message ID
-        await storage.setOrgState(interaction.channel.id, orgMessage.id);
-        await interaction.reply({ content: "✅ Embed refreshed successfully! All data preserved.", ephemeral: true });
-      } else {
-        await interaction.reply({ content: "❌ No active org embed found in this channel. Use `/reloadorg` to recreate it or `/startorg` to create a new one.", ephemeral: true });
-      }
+      await updateOrgEmbed(interaction.channel, orgMessage.id);
+      // Update stored message ID
+      await storage.setOrgState(interaction.channel.id, orgMessage.id);
+      await interaction.editReply({ content: "✅ Embed refreshed successfully! All data preserved." });
     } catch (error) {
       console.error("Failed to refresh embed:", error);
-      await interaction.reply({ content: "Failed to refresh embed. Please try again.", ephemeral: true });
+      try {
+        if (interaction.deferred || interaction.replied) {
+          await interaction.editReply({ content: "Failed to refresh embed. Please try again." });
+        } else {
+          await interaction.reply({ content: "Failed to refresh embed. Please try again.", ephemeral: true });
+        }
+      } catch (e) {
+        // ignore
+      }
     }
   }
 
@@ -437,7 +426,7 @@ async function handleSlashCommand(interaction: any) {
       // Attempt to update the main Org embed in this channel
       if (interaction.channel instanceof TextChannel) {
         const messages = await interaction.channel.messages.fetch({ limit: 50 });
-        const orgMessage = messages.find((m: DiscordMessage) => m.author.id === client?.user?.id && m.embeds.length > 0 && m.embeds[0].title === 'Pokemon Reservation Status');
+        const orgMessage = messages.find((m: DiscordMessage) => m.author.id === client?.user?.id && m.embeds.length > 0 && m.embeds[0].title && (m.embeds[0].title.includes('Pokemon Reservation') || m.embeds[0].title.includes('Reservation Hub')));
         if (orgMessage) {
           await updateOrgEmbed(interaction.channel, orgMessage.id);
         }
@@ -544,7 +533,7 @@ async function handleSlashCommand(interaction: any) {
       // Try to update any org embed in this channel to show progress
       if (interaction.channel instanceof TextChannel) {
         const messages = await interaction.channel.messages.fetch({ limit: 50 });
-        const orgMessage = messages.find((m: DiscordMessage) => m.author.id === client?.user?.id && m.embeds.length > 0 && m.embeds[0].title === 'Pokemon Reservation Status');
+        const orgMessage = messages.find((m: DiscordMessage) => m.author.id === client?.user?.id && m.embeds.length > 0 && m.embeds[0].title && (m.embeds[0].title.includes('Pokemon Reservation') || m.embeds[0].title.includes('Reservation Hub')));
         if (orgMessage) {
           await updateOrgEmbed(interaction.channel, orgMessage.id);
         }
@@ -891,7 +880,7 @@ async function handleMessage(message: Message) {
       // Update the org embed in this channel (if present)
       if (message.channel instanceof TextChannel) {
         const messages = await message.channel.messages.fetch({ limit: 50 });
-        const orgMessage = messages.find((m: DiscordMessage) => m.author.id === client?.user?.id && m.embeds.length > 0 && m.embeds[0].title === 'Pokemon Reservation Status');
+        const orgMessage = messages.find((m: DiscordMessage) => m.author.id === client?.user?.id && m.embeds.length > 0 && m.embeds[0].title && (m.embeds[0].title.includes('Pokemon Reservation') || m.embeds[0].title.includes('Reservation Hub')));
         if (orgMessage) {
           await updateOrgEmbed(message.channel, orgMessage.id);
         }
