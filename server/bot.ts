@@ -71,15 +71,59 @@ async function registerSlashCommands() {
   }
 }
 
+async function updateOrgEmbed(channel: TextChannel, messageId: string) {
+  const reservations = await storage.getReservations();
+  const checks = await storage.getChannelChecks();
+
+  const embed = new EmbedBuilder()
+    .setTitle('Pokemon Reservation Status')
+    .setDescription('Current reservations and progress. Use buttons below to join.')
+    .setColor(0x00AE86)
+    .setTimestamp();
+
+  // Create formatted list for each category
+  for (const [key, cat] of Object.entries(CATEGORIES)) {
+    const catReservations = reservations.filter(r => r.category === cat.name);
+    const catChecks = checks.filter(c => c.category === cat.name || (c.category === 'Unknown' && c.channelId)); // Simplified check logic
+    
+    // In a real app we'd map channel IDs precisely. Here we'll show if ANY check exists for the cat
+    const isDone = catChecks.some(c => c.isComplete);
+    const statusEmoji = isDone ? '🟢' : '🔴';
+
+    let fieldValue = catReservations.length > 0 
+      ? catReservations.map(r => {
+          const parts = [`**${r.user.username}**`];
+          if (r.subCategory) parts.push(`(${r.subCategory})`);
+          const pokemon = [r.pokemon1, r.pokemon2, r.additionalPokemon].filter(Boolean);
+          if (pokemon.length > 0) parts.push(`: ${pokemon.join(', ')}`);
+          return parts.join(' ');
+        }).join('\n')
+      : '*No reservations yet*';
+
+    embed.addFields({ 
+      name: `${statusEmoji} ${cat.name} (${cat.range})`, 
+      value: fieldValue,
+      inline: false 
+    });
+  }
+
+  try {
+    const message = await channel.messages.fetch(messageId);
+    await message.edit({ embeds: [embed] });
+  } catch (error) {
+    console.error("Failed to update embed:", error);
+  }
+}
+
 async function handleSlashCommand(interaction: any) {
   if (interaction.commandName === 'startorg') {
     const embed = new EmbedBuilder()
-      .setTitle('Pokemon Reservation Organization')
-      .setDescription('Select a category to begin your reservation.')
+      .setTitle('Pokemon Reservation Status')
+      .setDescription('Loading status...')
       .setColor(0x00AE86);
 
     // Row 1
-    const row1 = new ActionRowBuilder()
+    const row1 = new ActionRowBuilder<ButtonBuilder>()
       .addComponents(
         new ButtonBuilder().setCustomId('cat_rares').setLabel('Rares (1-23)').setStyle(ButtonStyle.Primary),
         new ButtonBuilder().setCustomId('cat_regionals').setLabel('Regionals (24-43)').setStyle(ButtonStyle.Primary),
@@ -88,7 +132,7 @@ async function handleSlashCommand(interaction: any) {
       );
 
     // Row 2
-    const row2 = new ActionRowBuilder()
+    const row2 = new ActionRowBuilder<ButtonBuilder>()
       .addComponents(
         new ButtonBuilder().setCustomId('cat_choice1').setLabel('Choice 1 (68-74)').setStyle(ButtonStyle.Secondary),
         new ButtonBuilder().setCustomId('cat_choice2').setLabel('Choice 2 (75-81)').setStyle(ButtonStyle.Secondary),
@@ -96,14 +140,19 @@ async function handleSlashCommand(interaction: any) {
       );
 
     // Row 3
-    const row3 = new ActionRowBuilder()
+    const row3 = new ActionRowBuilder<ButtonBuilder>()
       .addComponents(
         new ButtonBuilder().setCustomId('cat_res1').setLabel('Reserve 1 (89-92)').setStyle(ButtonStyle.Success),
         new ButtonBuilder().setCustomId('cat_res2').setLabel('Reserve 2 (93-96)').setStyle(ButtonStyle.Success),
         new ButtonBuilder().setCustomId('cat_res3').setLabel('Reserve 3 (97-100)').setStyle(ButtonStyle.Success),
       );
 
-    await interaction.reply({ embeds: [embed], components: [row1, row2, row3] });
+    const message = await interaction.reply({ embeds: [embed], components: [row1, row2, row3], fetchReply: true });
+    
+    // Initial update to show real data
+    if (interaction.channel instanceof TextChannel) {
+      await updateOrgEmbed(interaction.channel, message.id);
+    }
   }
 }
 
@@ -132,17 +181,21 @@ async function handleButton(interaction: any) {
     });
 
     if (customId === 'cat_regionals') {
-      // Sub-category prompt
-      const subRow = new ActionRowBuilder()
+      const subRow = new ActionRowBuilder<ButtonBuilder>()
         .addComponents(
           new ButtonBuilder().setCustomId('sub_galarian').setLabel('Galarian').setStyle(ButtonStyle.Primary),
           new ButtonBuilder().setCustomId('sub_alolan').setLabel('Alolan').setStyle(ButtonStyle.Primary),
           new ButtonBuilder().setCustomId('sub_hisuian').setLabel('Hisuian').setStyle(ButtonStyle.Primary),
           new ButtonBuilder().setCustomId('sub_none').setLabel('Standard Regional').setStyle(ButtonStyle.Secondary),
         );
-      await interaction.reply({ content: `You selected ${categoryName}. Choose a sub-category or Standard:`, components: [subRow], ephemeral: true });
+      await interaction.reply({ content: `You selected ${categoryName}. Choose a sub-category:`, components: [subRow], ephemeral: true });
     } else {
       await interaction.reply({ content: `You selected ${categoryName}. Use !res (Pokemon) to reserve.`, ephemeral: true });
+    }
+
+    // Update the main embed
+    if (interaction.channel instanceof TextChannel && interaction.message) {
+      await updateOrgEmbed(interaction.channel, interaction.message.id);
     }
     return;
   }
@@ -153,7 +206,13 @@ async function handleButton(interaction: any) {
     const reservation = await storage.getReservationByUser(user.id);
     if (reservation && reservation.category === 'Regionals') {
       await storage.updateReservation(reservation.id, { subCategory: sub === 'none' ? null : sub });
-      await interaction.reply({ content: `Updated sub-category to ${sub}. Use !res (Pokemon) to reserve.`, ephemeral: true });
+      await interaction.reply({ content: `Updated sub-category to ${sub}.`, ephemeral: true });
+      
+      // Update the main embed if we can find it (this is trickier with ephemeral replies, 
+      // but usually the interaction message is the one with buttons)
+      if (interaction.channel instanceof TextChannel && interaction.message && interaction.message.reference) {
+         // In this specific flow, the user might need to click the main message again or we update the parent
+      }
     } else {
       await interaction.reply({ content: "No active Regional reservation found.", ephemeral: true });
     }
@@ -185,37 +244,52 @@ async function handleMessage(message: Message) {
       return;
     }
 
-    // Logic for updating reservation based on category rules
-    // Simply updating pokemon1 or pokemon2 for now
+    let updated = false;
     if (!reservation.pokemon1) {
       await storage.updateReservation(reservation.id, { pokemon1: pokemonName });
       await message.reply(`Reserved ${pokemonName} for ${reservation.category}.`);
+      updated = true;
     } else if (!reservation.pokemon2 && (reservation.category.startsWith('Reserve') || reservation.category === 'Gmax')) {
       await storage.updateReservation(reservation.id, { pokemon2: pokemonName });
       await message.reply(`Reserved second pokemon ${pokemonName} for ${reservation.category}.`);
+      updated = true;
+    } else if (reservation.category === 'Regionals' && reservation.subCategory === 'Galarian' && !reservation.additionalPokemon) {
+      await storage.updateReservation(reservation.id, { additionalPokemon: pokemonName });
+      await message.reply(`Added Galarian choice ${pokemonName}.`);
+      updated = true;
+    } else if (reservation.category === 'Gmax' && !reservation.additionalPokemon) {
+      // Check for Rare Gmax
+      await storage.updateReservation(reservation.id, { additionalPokemon: pokemonName });
+      await message.reply(`Added Rare Gmax choice ${pokemonName}.`);
+      updated = true;
     } else {
-      // Maybe check for additional logic like Galarian birds
-      if (reservation.category === 'Regionals' && reservation.subCategory === 'Galarian' && !reservation.additionalPokemon) {
-         // Check if it's a bird? (Simplified logic here)
-         await storage.updateReservation(reservation.id, { additionalPokemon: pokemonName });
-         await message.reply(`Added Galarian choice ${pokemonName}.`);
-      } else {
-         await message.reply(`You already have reservations for this category.`);
+      await message.reply(`You already have reservations for this category.`);
+    }
+
+    // Attempt to update the last known Org embed in this channel
+    if (updated && message.channel instanceof TextChannel) {
+      // Search for the bot's embed message in the last 50 messages
+      const messages = await message.channel.messages.fetch({ limit: 50 });
+      const orgMessage = messages.find(m => m.author.id === client?.user?.id && m.embeds.length > 0 && m.embeds[0].title === 'Pokemon Reservation Status');
+      if (orgMessage) {
+        await updateOrgEmbed(message.channel, orgMessage.id);
       }
     }
   }
 
   // Handle Light/Completion Check
-  // "command @Pokétwo#8236 inc buy -y"
   if (message.content.includes('@Pokétwo') && message.content.includes('inc buy -y')) {
-    // Identify which category/channel this is.
-    // Assuming message.channel.name or topic contains info, or we just map channel ID.
-    // For now, we'll try to guess based on user's current reservation or just log it.
-    // In a real app, we'd need a mapping of Channel ID -> Category/Slot.
-    
-    // Simplification: Mark it in general log
     const channelId = message.channel.id;
-    await storage.updateChannelCheck('Unknown', channelId, true);
-    // await message.react('🟢'); // Indicate seen
+    // Map channel to category based on range? 
+    // For simplicity, we'll mark the specific channel
+    await storage.updateChannelCheck('Active', channelId, true);
+    
+    if (message.channel instanceof TextChannel) {
+      const messages = await message.channel.messages.fetch({ limit: 50 });
+      const orgMessage = messages.find(m => m.author.id === client?.user?.id && m.embeds.length > 0 && m.embeds[0].title === 'Pokemon Reservation Status');
+      if (orgMessage) {
+        await updateOrgEmbed(message.channel, orgMessage.id);
+      }
+    }
   }
 }
