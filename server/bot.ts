@@ -75,6 +75,11 @@ async function registerSlashCommands() {
      });
 
      await client.application.commands.create({
+       name: 'reloadorg',
+       description: 'Recreate the org embed if it gets stuck or missing.',
+     });
+
+     await client.application.commands.create({
        name: 'cancelres',
        description: 'Cancel your reservation.',
      });
@@ -205,6 +210,43 @@ async function buildCategoryButtons(reservations: any[]): Promise<ActionRowBuild
   return [row1, row2, row3, adminRow];
 }
 
+// Helper function to find the org message, trying stored ID first, then searching
+async function findOrgMessage(channel: TextChannel): Promise<any | null> {
+  // First try to get from stored state
+  const orgState = await storage.getOrgState();
+  if (orgState && orgState.channelId === channel.id) {
+    try {
+      const message = await channel.messages.fetch(orgState.messageId);
+      if (message && message.author.id === client?.user?.id && message.embeds.length > 0) {
+        return message;
+      }
+    } catch (e) {
+      console.log("Stored org message not found, falling back to search");
+    }
+  }
+
+  // Fall back to searching recent messages
+  try {
+    const messages = await channel.messages.fetch({ limit: 50 });
+    const orgMessage = messages.find((m: any) => 
+      m.author.id === client?.user?.id && 
+      m.embeds.length > 0 && 
+      m.embeds[0].title && 
+      (m.embeds[0].title.includes('Pokemon Reservation') || m.embeds[0].title.includes('Reservation Hub'))
+    );
+    
+    // If found via search, update the stored state
+    if (orgMessage) {
+      await storage.setOrgState(channel.id, orgMessage.id);
+    }
+    
+    return orgMessage || null;
+  } catch (e) {
+    console.error("Failed to search for org message:", e);
+    return null;
+  }
+}
+
 async function updateOrgEmbed(channel: TextChannel, messageId: string) {
   const reservations = await storage.getReservations();
   const checks = await storage.getChannelChecks();
@@ -225,7 +267,7 @@ async function updateOrgEmbed(channel: TextChannel, messageId: string) {
     )
     .setColor(0x5865F2)
     .setThumbnail('https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/items/master-ball.png')
-    .setFooter({ text: 'Use /refreshorg to update • /endorg to close' })
+    .setFooter({ text: 'Use /refreshorg to update • /reloadorg if stuck • /endorg to close' })
     .setTimestamp();
 
   for (const [key, cat] of Object.entries(CATEGORIES)) {
@@ -289,6 +331,8 @@ async function handleSlashCommand(interaction: any) {
 
     if (interaction.channel instanceof TextChannel) {
       await updateOrgEmbed(interaction.channel, message.id);
+      // Save the message ID to database for reliable retrieval
+      await storage.setOrgState(interaction.channel.id, message.id);
     }
   }
 
@@ -299,23 +343,75 @@ async function handleSlashCommand(interaction: any) {
     }
 
     try {
-      const messages = await interaction.channel.messages.fetch({ limit: 50 });
-      const orgMessage = messages.find((m: any) => 
-        m.author.id === client?.user?.id && 
-        m.embeds.length > 0 && 
-        m.embeds[0].title && 
-        (m.embeds[0].title.includes('Pokemon Reservation') || m.embeds[0].title.includes('Reservation Hub'))
-      );
+      // First, try to get the message ID from database
+      const orgState = await storage.getOrgState();
+      let orgMessage = null;
+
+      if (orgState && orgState.channelId === interaction.channel.id) {
+        try {
+          orgMessage = await interaction.channel.messages.fetch(orgState.messageId);
+        } catch (e) {
+          console.log("Stored message ID not found, falling back to search");
+        }
+      }
+
+      // If not found in database or fetch failed, search recent messages
+      if (!orgMessage) {
+        const messages = await interaction.channel.messages.fetch({ limit: 50 });
+        orgMessage = messages.find((m: any) => 
+          m.author.id === client?.user?.id && 
+          m.embeds.length > 0 && 
+          m.embeds[0].title && 
+          (m.embeds[0].title.includes('Pokemon Reservation') || m.embeds[0].title.includes('Reservation Hub'))
+        );
+      }
 
       if (orgMessage) {
         await updateOrgEmbed(interaction.channel, orgMessage.id);
+        // Update stored message ID
+        await storage.setOrgState(interaction.channel.id, orgMessage.id);
         await interaction.reply({ content: "✅ Embed refreshed successfully! All data preserved.", ephemeral: true });
       } else {
-        await interaction.reply({ content: "No active org embed found. Use /startorg to create one.", ephemeral: true });
+        await interaction.reply({ content: "❌ No active org embed found in this channel. Use `/reloadorg` to recreate it or `/startorg` to create a new one.", ephemeral: true });
       }
     } catch (error) {
       console.error("Failed to refresh embed:", error);
       await interaction.reply({ content: "Failed to refresh embed. Please try again.", ephemeral: true });
+    }
+  }
+
+  // New: /reloadorg - recreate the org embed if it's stuck or missing
+  if (interaction.commandName === 'reloadorg') {
+    if (!(interaction.channel instanceof TextChannel)) {
+      await interaction.reply({ content: "This command only works in text channels.", ephemeral: true });
+      return;
+    }
+
+    try {
+      // Get current reservations
+      const reservations = await storage.getReservations();
+      const buttons = await buildCategoryButtons(reservations);
+
+      // Create a fresh embed with current data
+      const embed = new EmbedBuilder()
+        .setTitle('⚡ Pokemon Reservation Hub')
+        .setDescription('Reloading status...')
+        .setColor(0x5865F2);
+
+      // Send new embed
+      const message = await interaction.reply({ embeds: [embed], components: buttons, fetchReply: true });
+
+      // Update it with full data
+      await updateOrgEmbed(interaction.channel, message.id);
+      
+      // Save the new message ID
+      await storage.setOrgState(interaction.channel.id, message.id);
+      
+      // Send a follow-up message to confirm
+      await interaction.followUp({ content: "✅ Embed reloaded successfully! All reservation data has been preserved.", ephemeral: true });
+    } catch (error) {
+      console.error("Failed to reload embed:", error);
+      await interaction.reply({ content: "Failed to reload embed. Please try again or use `/startorg`.", ephemeral: true });
     }
   }
 
@@ -378,6 +474,7 @@ async function handleSlashCommand(interaction: any) {
     try {
       await storage.clearReservations();
       await storage.clearChannelChecks();
+      await storage.clearOrgState(); // Clear stored org message ID
     } catch (err) {
       console.error("Failed to clear reservations/checks:", err);
       await interaction.reply({ content: "Failed to clear data. Try again later.", ephemeral: true });

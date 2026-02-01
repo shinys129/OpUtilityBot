@@ -1,9 +1,10 @@
 import { db } from "./db";
 import {
-  users, reservations, channelChecks,
+  users, reservations, channelChecks, orgState,
   type User, type InsertUser,
   type Reservation, type InsertReservation,
-  type ChannelCheck, type InsertChannelCheck
+  type ChannelCheck, type InsertChannelCheck,
+  type OrgState, type InsertOrgState
 } from "@shared/schema";
 import { eq, and, desc } from "drizzle-orm";
 
@@ -35,6 +36,11 @@ export interface IStorage {
 
   // New: clear/reset all channel checks (used by /endorg) — now resets isComplete to false instead of deleting mappings
   clearChannelChecks(): Promise<void>;
+
+  // Org State operations
+  getOrgState(): Promise<OrgState | undefined>;
+  setOrgState(channelId: string, messageId: string): Promise<OrgState>;
+  clearOrgState(): Promise<void>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -156,6 +162,28 @@ export class DatabaseStorage implements IStorage {
       // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
       await db.update(channelChecks).set({ isComplete: false, updatedAt: new Date() }).where(eq(channelChecks.id, c.id!));
     }
+  }
+
+  async getOrgState(): Promise<OrgState | undefined> {
+    // Get the most recent org state
+    const [state] = await db.select()
+      .from(orgState)
+      .orderBy(desc(orgState.updatedAt))
+      .limit(1);
+    return state;
+  }
+
+  async setOrgState(channelId: string, messageId: string): Promise<OrgState> {
+    // Delete any existing state and create a new one
+    await db.delete(orgState);
+    const [state] = await db.insert(orgState)
+      .values({ channelId, messageId })
+      .returning();
+    return state;
+  }
+
+  async clearOrgState(): Promise<void> {
+    await db.delete(orgState);
   }
 }
 
