@@ -811,6 +811,7 @@ async function handleButton(interaction: any) {
       const regionalReservations = existingReservations.filter(r => r.category === 'Regionals');
       const hasStandardRegional = regionalReservations.some(r => !r.subCategory || r.subCategory === 'none');
       
+      // Block if someone has Standard Regional
       if (hasStandardRegional) {
         const standardHolder = regionalReservations.find(r => !r.subCategory || r.subCategory === 'none');
         if (standardHolder?.user.discordId === userId) {
@@ -818,6 +819,18 @@ async function handleButton(interaction: any) {
         } else {
           await interaction.reply({ content: `Regionals is fully claimed by ${standardHolder?.user.username} (Standard Regional). They must use /cancelres first.`, ephemeral: true });
         }
+        return;
+      }
+      
+      // Check which subcategories are taken
+      const takenSubcategories = regionalReservations.map(r => r.subCategory?.toLowerCase()).filter(Boolean);
+      const allThreeTaken = takenSubcategories.includes('galarian') && 
+                            takenSubcategories.includes('alolan') && 
+                            takenSubcategories.includes('hisuian');
+      
+      // Block if all 3 subcategories are taken
+      if (allThreeTaken) {
+        await interaction.reply({ content: `All Regional subcategories are taken. Someone must use /cancelres first.`, ephemeral: true });
         return;
       }
       
@@ -836,9 +849,6 @@ async function handleButton(interaction: any) {
       });
       
       // Build subcategory buttons - hide ones already taken, hide Standard if any subcategory is taken
-      const takenSubcategories = regionalReservations.map(r => r.subCategory?.toLowerCase());
-      const hasAnySubcategory = regionalReservations.length > 0;
-      
       const buttons: ButtonBuilder[] = [];
       if (!takenSubcategories.includes('galarian')) {
         buttons.push(new ButtonBuilder().setCustomId('sub_galarian').setLabel('Galarian').setStyle(ButtonStyle.Primary));
@@ -850,7 +860,7 @@ async function handleButton(interaction: any) {
         buttons.push(new ButtonBuilder().setCustomId('sub_hisuian').setLabel('Hisuian').setStyle(ButtonStyle.Primary));
       }
       // Only show Standard Regional if no one has picked any subcategory yet
-      if (!hasAnySubcategory) {
+      if (regionalReservations.length === 0) {
         buttons.push(new ButtonBuilder().setCustomId('sub_none').setLabel('Standard Regional').setStyle(ButtonStyle.Secondary));
       }
       

@@ -106,13 +106,8 @@ export class DatabaseStorage implements IStorage {
   }
 
   async clearReservations(): Promise<void> {
-    // Delete all reservations. Use a safe approach: select ids then delete by id.
-    const rows = await db.select({ id: reservations.id }).from(reservations);
-    for (const r of rows) {
-      // r.id exists since we selected it
-      // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
-      await db.delete(reservations).where(eq(reservations.id, r.id!));
-    }
+    // Delete all reservations directly
+    await db.delete(reservations);
   }
 
   async getChannelChecks(): Promise<ChannelCheck[]> {
