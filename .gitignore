@@ -1,6 +1,7 @@
-node_modules
-dist
+# common
+node_modules/
+.env
+.vscode/
+__pycache__/
+*.pyc
 .DS_Store
-server/public
-vite.config.ts.*
-*.tar.gz
