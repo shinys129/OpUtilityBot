@@ -729,7 +729,7 @@ async function handleButton(interaction: any) {
     }
 
     const reservation = await storage.getReservationByUser(user.id);
-    if (!reservation || reservation.category !== 'Regionals' || reservation.subCategory !== 'Galarian') {
+    if (!reservation || reservation.category !== 'Regionals' || reservation.subCategory?.toLowerCase() !== 'galarian') {
       await interaction.reply({ content: 'No active Galarian Regional reservation found to set this choice.', ephemeral: true });
       return;
     }
