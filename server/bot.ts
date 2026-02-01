@@ -211,7 +211,7 @@ async function buildCategoryButtons(reservations: any[]): Promise<ActionRowBuild
 }
 
 // Helper function to find the org message, trying stored ID first, then searching
-async function findOrgMessage(channel: TextChannel): Promise<any | null> {
+async function findOrgMessage(channel: TextChannel): Promise<DiscordMessage | null> {
   // First try to get from stored state
   const orgState = await storage.getOrgState();
   if (orgState && orgState.channelId === channel.id) {
@@ -228,7 +228,7 @@ async function findOrgMessage(channel: TextChannel): Promise<any | null> {
   // Fall back to searching recent messages
   try {
     const messages = await channel.messages.fetch({ limit: 50 });
-    const orgMessage = messages.find((m: any) => 
+    const orgMessage = messages.find((m: DiscordMessage) => 
       m.author.id === client?.user?.id && 
       m.embeds.length > 0 && 
       m.embeds[0].title && 
@@ -358,7 +358,7 @@ async function handleSlashCommand(interaction: any) {
       // If not found in database or fetch failed, search recent messages
       if (!orgMessage) {
         const messages = await interaction.channel.messages.fetch({ limit: 50 });
-        orgMessage = messages.find((m: any) => 
+        orgMessage = messages.find((m: DiscordMessage) => 
           m.author.id === client?.user?.id && 
           m.embeds.length > 0 && 
           m.embeds[0].title && 
