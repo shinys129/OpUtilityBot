@@ -729,8 +729,11 @@ async function handleButton(interaction: any) {
     }
 
     const reservation = await storage.getReservationByUser(user.id);
-    if (!reservation || reservation.category !== 'Regionals' || reservation.subCategory?.toLowerCase() !== 'galarian') {
-      await interaction.reply({ content: 'No active Galarian Regional reservation found to set this choice.', ephemeral: true });
+    // Allow Galarian bird selection for Regionals with galarian subCategory OR standard (none/null)
+    const subCat = reservation?.subCategory?.toLowerCase();
+    const validSubCategory = !subCat || subCat === 'galarian' || subCat === 'none';
+    if (!reservation || reservation.category !== 'Regionals' || !validSubCategory) {
+      await interaction.reply({ content: 'No active Regional reservation found to set this choice.', ephemeral: true });
       return;
     }
 
@@ -860,6 +863,15 @@ async function handleButton(interaction: any) {
             new ButtonBuilder().setCustomId('galarian_bird_moltres').setLabel('Galarian Moltres').setStyle(ButtonStyle.Primary),
           );
         await interaction.reply({ content: `Updated to Galarian Regionals. Please pick which Galarian bird you want (or you can still use !res to type it):`, components: [birdRow], ephemeral: true });
+      } else if (sub === 'none') {
+        // Standard Regional - also show Galarian bird options
+        const birdRow = new ActionRowBuilder<ButtonBuilder>()
+          .addComponents(
+            new ButtonBuilder().setCustomId('galarian_bird_articuno').setLabel('Galarian Articuno').setStyle(ButtonStyle.Primary),
+            new ButtonBuilder().setCustomId('galarian_bird_zapdos').setLabel('Galarian Zapdos').setStyle(ButtonStyle.Primary),
+            new ButtonBuilder().setCustomId('galarian_bird_moltres').setLabel('Galarian Moltres').setStyle(ButtonStyle.Primary),
+          );
+        await interaction.reply({ content: `Updated to Standard Regional. You can pick a Galarian bird below, or use !res to add your pokemon:`, components: [birdRow], ephemeral: true });
       } else {
         // For Alolan and Hisuian, we explicitly tell user no extra reserve slot is available
         await interaction.reply({ content: `Updated sub-category to ${sub}. Note: Alolan and Hisuian subcategories do not receive a separate reserve slot. Use !res to add your pokemon.`, ephemeral: true });
