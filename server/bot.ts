@@ -511,6 +511,8 @@ async function handleSlashCommand(interaction: any) {
 
   // New: /endorg - admin only: close the embed and clear reservations/checks
   if (interaction.commandName === 'endorg') {
+    console.log("[endorg] Command received");
+    
     // Authorization: either ManageGuild permission or role id set in ADMIN_ROLE_ID
     let isAdmin = false;
     const adminRoleId = process.env.ADMIN_ROLE_ID;
@@ -523,8 +525,10 @@ async function handleSlashCommand(interaction: any) {
         isAdmin = true;
       }
     } catch (e) {
-      // ignore and treat as not admin
+      console.log("[endorg] Error checking admin:", e);
     }
+
+    console.log("[endorg] isAdmin:", isAdmin);
 
     if (!isAdmin) {
       await interaction.reply({ content: "You do not have permission to end the organization.", ephemeral: true });
@@ -532,27 +536,42 @@ async function handleSlashCommand(interaction: any) {
     }
 
     // Defer reply immediately to prevent timeout
-    await interaction.deferReply({ ephemeral: true });
+    try {
+      console.log("[endorg] Deferring reply...");
+      await interaction.deferReply({ ephemeral: true });
+      console.log("[endorg] Reply deferred successfully");
+    } catch (deferErr) {
+      console.error("[endorg] Failed to defer reply:", deferErr);
+      return;
+    }
 
     // Find the org message BEFORE clearing data
     let orgMessage: DiscordMessage | null = null;
-    if (interaction.channel instanceof TextChannel) {
-      orgMessage = await findOrgMessage(interaction.channel);
+    try {
+      if (interaction.channel instanceof TextChannel) {
+        console.log("[endorg] Finding org message...");
+        orgMessage = await findOrgMessage(interaction.channel);
+        console.log("[endorg] Org message found:", !!orgMessage);
+      }
+    } catch (findErr) {
+      console.error("[endorg] Error finding org message:", findErr);
     }
 
     // Clear reservations and channel checks (reset isComplete but preserve mappings)
     try {
+      console.log("[endorg] Clearing data...");
       await storage.clearReservations();
       await storage.clearChannelChecks();
       await storage.clearOrgState();
+      console.log("[endorg] Data cleared successfully");
     } catch (err) {
-      console.error("Failed to clear reservations/checks:", err);
-      // Continue anyway - try to close the embed
+      console.error("[endorg] Failed to clear reservations/checks:", err);
     }
 
     // Close the embed if found
     if (orgMessage) {
       try {
+        console.log("[endorg] Editing org message to closed state...");
         const closedEmbed = new EmbedBuilder()
           .setTitle('Pokemon Reservation Status — CLOSED')
           .setDescription('This organization round has been closed. Use /startorg to begin a fresh round.')
@@ -560,13 +579,17 @@ async function handleSlashCommand(interaction: any) {
           .setTimestamp();
 
         await orgMessage.edit({ embeds: [closedEmbed], components: [] });
+        console.log("[endorg] Org message edited, sending reply...");
         await interaction.editReply({ content: "✅ Organization closed and reservations cleared. Use /startorg to begin a fresh round." });
+        console.log("[endorg] Complete with embed closed");
       } catch (err) {
-        console.error("Failed to edit org message during endorg:", err);
+        console.error("[endorg] Failed to edit org message:", err);
         await interaction.editReply({ content: "Data cleared but failed to close the embed. You may need to delete it manually." });
       }
     } else {
+      console.log("[endorg] No org message found, sending reply...");
       await interaction.editReply({ content: "Data cleared. No org embed was found to close." });
+      console.log("[endorg] Complete without embed");
     }
     return;
   }
