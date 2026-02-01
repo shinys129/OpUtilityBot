@@ -1,4 +1,5 @@
-import { Client, GatewayIntentBits, Events, ActionRowBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder, Interaction, Message, TextChannel, StringSelectMenuBuilder, PermissionFlagsBits } from "discord.js";
+import { Client, GatewayIntentBits, Events, ActionRowBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder, Interaction, Message, TextChannel, StringSelectMenuBuilder, PermissionFlagsBits, type Collection, type Snowflake } from "discord.js";
+import type { Message as DiscordMessage } from "discord.js";
 import { storage } from "./storage";
 
 // Constants for Category Configuration
@@ -340,7 +341,7 @@ async function handleSlashCommand(interaction: any) {
       // Attempt to update the main Org embed in this channel
       if (interaction.channel instanceof TextChannel) {
         const messages = await interaction.channel.messages.fetch({ limit: 50 });
-        const orgMessage = messages.find(m => m.author.id === client?.user?.id && m.embeds.length > 0 && m.embeds[0].title === 'Pokemon Reservation Status');
+        const orgMessage = messages.find((m: DiscordMessage) => m.author.id === client?.user?.id && m.embeds.length > 0 && m.embeds[0].title === 'Pokemon Reservation Status');
         if (orgMessage) {
           await updateOrgEmbed(interaction.channel, orgMessage.id);
         }
@@ -387,7 +388,7 @@ async function handleSlashCommand(interaction: any) {
     if (interaction.channel instanceof TextChannel) {
       try {
         const messages = await interaction.channel.messages.fetch({ limit: 50 });
-        const orgMessage = messages.find(m => m.author.id === client?.user?.id && m.embeds.length > 0 && m.embeds[0].title && (m.embeds[0].title as string).startsWith('Pokemon Reservation Status'));
+        const orgMessage = messages.find((m: DiscordMessage) => m.author.id === client?.user?.id && m.embeds.length > 0 && m.embeds[0].title && (m.embeds[0].title as string).startsWith('Pokemon Reservation'));
         if (orgMessage) {
           const closedEmbed = new EmbedBuilder()
             .setTitle('Pokemon Reservation Status — CLOSED')
@@ -432,7 +433,7 @@ async function handleSlashCommand(interaction: any) {
     const channelsRaw = interaction.options.getString('channels', true);
 
     // Extract channel IDs from mentions like <#123..> or raw numbers separated by commas/spaces
-    const ids = Array.from(new Set((channelsRaw.match(/\d{17,19}/g) || []).map(s => s.trim())));
+    const ids: string[] = Array.from(new Set((channelsRaw.match(/\d{17,19}/g) || []).map((s: string) => s.trim())));
 
     if (ids.length === 0) {
       await interaction.reply({ content: "No channel IDs found in the channels parameter. Provide channel mentions or channel IDs separated by commas.", ephemeral: true });
@@ -446,7 +447,7 @@ async function handleSlashCommand(interaction: any) {
       // Try to update any org embed in this channel to show progress
       if (interaction.channel instanceof TextChannel) {
         const messages = await interaction.channel.messages.fetch({ limit: 50 });
-        const orgMessage = messages.find(m => m.author.id === client?.user?.id && m.embeds.length > 0 && m.embeds[0].title === 'Pokemon Reservation Status');
+        const orgMessage = messages.find((m: DiscordMessage) => m.author.id === client?.user?.id && m.embeds.length > 0 && m.embeds[0].title === 'Pokemon Reservation Status');
         if (orgMessage) {
           await updateOrgEmbed(interaction.channel, orgMessage.id);
         }
@@ -567,7 +568,7 @@ async function handleButton(interaction: any) {
     // update embed if present
     if (interaction.channel instanceof TextChannel) {
       const messages = await interaction.channel.messages.fetch({ limit: 50 });
-      const orgMessage = messages.find(m => m.author.id === client?.user?.id && m.embeds.length > 0 && m.embeds[0].title === 'Pokemon Reservation Status');
+      const orgMessage = messages.find((m: DiscordMessage) => m.author.id === client?.user?.id && m.embeds.length > 0 && (m.embeds[0].title?.includes('Pokemon Reservation') || m.embeds[0].title?.includes('Reservation Hub')));
       if (orgMessage) {
         await updateOrgEmbed(interaction.channel, orgMessage.id);
       }
@@ -601,7 +602,7 @@ async function handleButton(interaction: any) {
     // update embed if present
     if (interaction.channel instanceof TextChannel) {
       const messages = await interaction.channel.messages.fetch({ limit: 50 });
-      const orgMessage = messages.find(m => m.author.id === client?.user?.id && m.embeds.length > 0 && m.embeds[0].title === 'Pokemon Reservation Status');
+      const orgMessage = messages.find((m: DiscordMessage) => m.author.id === client?.user?.id && m.embeds.length > 0 && (m.embeds[0].title?.includes('Pokemon Reservation') || m.embeds[0].title?.includes('Reservation Hub')));
       if (orgMessage) {
         await updateOrgEmbed(interaction.channel, orgMessage.id);
       }
@@ -762,7 +763,7 @@ async function handleSelectMenu(interaction: any) {
     // Attempt to update the main Org embed in this channel
     if (interaction.channel instanceof TextChannel) {
       const messages = await interaction.channel.messages.fetch({ limit: 50 });
-      const orgMessage = messages.find(m => m.author.id === client?.user?.id && m.embeds.length > 0 && m.embeds[0].title === 'Pokemon Reservation Status');
+      const orgMessage = messages.find((m: DiscordMessage) => m.author.id === client?.user?.id && m.embeds.length > 0 && (m.embeds[0].title?.includes('Pokemon Reservation') || m.embeds[0].title?.includes('Reservation Hub')));
       if (orgMessage) {
         await updateOrgEmbed(interaction.channel, orgMessage.id);
       }
@@ -793,7 +794,7 @@ async function handleMessage(message: Message) {
       // Update the org embed in this channel (if present)
       if (message.channel instanceof TextChannel) {
         const messages = await message.channel.messages.fetch({ limit: 50 });
-        const orgMessage = messages.find(m => m.author.id === client?.user?.id && m.embeds.length > 0 && m.embeds[0].title === 'Pokemon Reservation Status');
+        const orgMessage = messages.find((m: DiscordMessage) => m.author.id === client?.user?.id && m.embeds.length > 0 && m.embeds[0].title === 'Pokemon Reservation Status');
         if (orgMessage) {
           await updateOrgEmbed(message.channel, orgMessage.id);
         }
@@ -843,7 +844,7 @@ async function handleMessage(message: Message) {
     // update embed if present
     if (message.channel instanceof TextChannel) {
       const messages = await message.channel.messages.fetch({ limit: 50 });
-      const orgMessage = messages.find(m => m.author.id === client?.user?.id && m.embeds.length > 0 && m.embeds[0].title === 'Pokemon Reservation Status');
+      const orgMessage = messages.find((m: DiscordMessage) => m.author.id === client?.user?.id && m.embeds.length > 0 && (m.embeds[0].title?.includes('Pokemon Reservation') || m.embeds[0].title?.includes('Reservation Hub')));
       if (orgMessage) {
         await updateOrgEmbed(message.channel, orgMessage.id);
       }
@@ -937,7 +938,7 @@ async function handleMessage(message: Message) {
 
       // update org embed as well
       const messages = await message.channel.messages.fetch({ limit: 50 });
-      const orgMessage = messages.find(m => m.author.id === client?.user?.id && m.embeds.length > 0 && m.embeds[0].title === 'Pokemon Reservation Status');
+      const orgMessage = messages.find((m: DiscordMessage) => m.author.id === client?.user?.id && m.embeds.length > 0 && (m.embeds[0].title?.includes('Pokemon Reservation') || m.embeds[0].title?.includes('Reservation Hub')));
       if (orgMessage) {
         await updateOrgEmbed(message.channel as TextChannel, orgMessage.id);
       }
@@ -947,7 +948,7 @@ async function handleMessage(message: Message) {
     if (updated && message.channel instanceof TextChannel) {
       // Search for the bot's embed message in the last 50 messages
       const messages = await message.channel.messages.fetch({ limit: 50 });
-      const orgMessage = messages.find(m => m.author.id === client?.user?.id && m.embeds.length > 0 && m.embeds[0].title === 'Pokemon Reservation Status');
+      const orgMessage = messages.find((m: DiscordMessage) => m.author.id === client?.user?.id && m.embeds.length > 0 && (m.embeds[0].title?.includes('Pokemon Reservation') || m.embeds[0].title?.includes('Reservation Hub')));
       if (orgMessage) {
         await updateOrgEmbed(message.channel, orgMessage.id);
       }
