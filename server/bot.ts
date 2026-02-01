@@ -526,7 +526,7 @@ async function handleSlashCommand(interaction: any) {
     if (interaction.channel instanceof TextChannel) {
       try {
         const messages = await interaction.channel.messages.fetch({ limit: 50 });
-        const orgMessage = messages.find((m: DiscordMessage) => m.author.id === client?.user?.id && m.embeds.length > 0 && m.embeds[0].title && (m.embeds[0].title as string).startsWith('Pokemon Reservation'));
+        const orgMessage = messages.find((m: DiscordMessage) => m.author.id === client?.user?.id && m.embeds.length > 0 && m.embeds[0].title && (m.embeds[0].title.includes('Pokemon Reservation') || m.embeds[0].title.includes('Reservation Hub')));
         if (orgMessage) {
           const closedEmbed = new EmbedBuilder()
             .setTitle('Pokemon Reservation Status — CLOSED')
@@ -805,38 +805,82 @@ async function handleButton(interaction: any) {
 
     // Check if category is already claimed by someone else
     const existingReservations = await storage.getReservations();
-    const existingClaim = existingReservations.find(r => r.category === categoryName);
     
-    if (existingClaim) {
-      if (existingClaim.user.discordId === userId) {
-        await interaction.reply({ content: `You already have a reservation for ${categoryName}. Use /cancelres to release it first.`, ephemeral: true });
-      } else {
-        await interaction.reply({ content: `${categoryName} is already claimed by ${existingClaim.user.username}. They must use /cancelres first.`, ephemeral: true });
+    // Special handling for Regionals - allow multiple subcategories but not Standard Regional with others
+    if (categoryName === 'Regionals') {
+      const regionalReservations = existingReservations.filter(r => r.category === 'Regionals');
+      const hasStandardRegional = regionalReservations.some(r => !r.subCategory || r.subCategory === 'none');
+      
+      if (hasStandardRegional) {
+        const standardHolder = regionalReservations.find(r => !r.subCategory || r.subCategory === 'none');
+        if (standardHolder?.user.discordId === userId) {
+          await interaction.reply({ content: `You already have a Standard Regional reservation. Use /cancelres to release it first.`, ephemeral: true });
+        } else {
+          await interaction.reply({ content: `Regionals is fully claimed by ${standardHolder?.user.username} (Standard Regional). They must use /cancelres first.`, ephemeral: true });
+        }
+        return;
       }
-      return;
-    }
-
-    // Create a new reservation
-    await storage.createReservation({
-      userId: user.id,
-      category: categoryName,
-      channelRange: range,
-    });
-
-    if (customId === 'cat_regionals') {
-      const subRow = new ActionRowBuilder<ButtonBuilder>()
-        .addComponents(
-          new ButtonBuilder().setCustomId('sub_galarian').setLabel('Galarian').setStyle(ButtonStyle.Primary),
-          new ButtonBuilder().setCustomId('sub_alolan').setLabel('Alolan').setStyle(ButtonStyle.Primary),
-          new ButtonBuilder().setCustomId('sub_hisuian').setLabel('Hisuian').setStyle(ButtonStyle.Primary),
-          new ButtonBuilder().setCustomId('sub_none').setLabel('Standard Regional').setStyle(ButtonStyle.Secondary),
-        );
+      
+      // Check if user already has a Regional reservation
+      const userRegional = regionalReservations.find(r => r.user.discordId === userId);
+      if (userRegional) {
+        await interaction.reply({ content: `You already have a Regional reservation (${userRegional.subCategory || 'Standard'}). Use /cancelres to release it first.`, ephemeral: true });
+        return;
+      }
+      
+      // Create reservation and show subcategory options
+      await storage.createReservation({
+        userId: user.id,
+        category: categoryName,
+        channelRange: range,
+      });
+      
+      // Build subcategory buttons - hide ones already taken, hide Standard if any subcategory is taken
+      const takenSubcategories = regionalReservations.map(r => r.subCategory?.toLowerCase());
+      const hasAnySubcategory = regionalReservations.length > 0;
+      
+      const buttons: ButtonBuilder[] = [];
+      if (!takenSubcategories.includes('galarian')) {
+        buttons.push(new ButtonBuilder().setCustomId('sub_galarian').setLabel('Galarian').setStyle(ButtonStyle.Primary));
+      }
+      if (!takenSubcategories.includes('alolan')) {
+        buttons.push(new ButtonBuilder().setCustomId('sub_alolan').setLabel('Alolan').setStyle(ButtonStyle.Primary));
+      }
+      if (!takenSubcategories.includes('hisuian')) {
+        buttons.push(new ButtonBuilder().setCustomId('sub_hisuian').setLabel('Hisuian').setStyle(ButtonStyle.Primary));
+      }
+      // Only show Standard Regional if no one has picked any subcategory yet
+      if (!hasAnySubcategory) {
+        buttons.push(new ButtonBuilder().setCustomId('sub_none').setLabel('Standard Regional').setStyle(ButtonStyle.Secondary));
+      }
+      
+      const subRow = new ActionRowBuilder<ButtonBuilder>().addComponents(buttons);
       await interaction.reply({ content: `You selected ${categoryName}. Choose a sub-category:`, components: [subRow], ephemeral: true });
-    } else if (customId === 'cat_gmax') {
-      // For Gmax: tell user to use !res to set their Pokemon and then the bot will prompt for a Gigantamax Rare.
-      await interaction.reply({ content: `You selected ${categoryName}. Use !res (Pokemon) to reserve your Gmax; after you add your pokemon I'll ask which Gigantamax Rare you want (Urshifu / Melmetal / Eternatus).`, ephemeral: true });
     } else {
-      await interaction.reply({ content: `You selected ${categoryName}. Use !res (Pokemon) to reserve.`, ephemeral: true });
+      // For all other categories (including Gmax)
+      const existingClaim = existingReservations.find(r => r.category === categoryName);
+      
+      if (existingClaim) {
+        if (existingClaim.user.discordId === userId) {
+          await interaction.reply({ content: `You already have a reservation for ${categoryName}. Use /cancelres to release it first.`, ephemeral: true });
+        } else {
+          await interaction.reply({ content: `${categoryName} is already claimed by ${existingClaim.user.username}. They must use /cancelres first.`, ephemeral: true });
+        }
+        return;
+      }
+      
+      // Create reservation
+      await storage.createReservation({
+        userId: user.id,
+        category: categoryName,
+        channelRange: range,
+      });
+      
+      if (customId === 'cat_gmax') {
+        await interaction.reply({ content: `You selected ${categoryName}. Use !res (Pokemon) to reserve your Gmax; after you add your pokemon I'll ask which Gigantamax Rare you want (Urshifu / Melmetal / Eternatus).`, ephemeral: true });
+      } else {
+        await interaction.reply({ content: `You selected ${categoryName}. Use !res (Pokemon) to reserve.`, ephemeral: true });
+      }
     }
 
     // Update the main embed
