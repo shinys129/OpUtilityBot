@@ -312,6 +312,10 @@ async function updateOrgEmbed(channel: TextChannel, messageId: string) {
         const pokemon = [r.pokemon1, r.pokemon2, r.additionalPokemon].filter(Boolean);
         if (pokemon.length > 0) {
           parts.push(`\n┃ 🎯 ${pokemon.join(' • ')}`);
+          // Show "Split available" for Reserve categories with only 1 Pokemon
+          if (cat.name.startsWith('Reserve') && r.pokemon1 && !r.pokemon2) {
+            parts.push(`\n┃ 💎 *Split available*`);
+          }
         }
         return parts.join(' ');
       }).join('\n');
