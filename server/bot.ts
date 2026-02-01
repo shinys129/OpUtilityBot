@@ -729,10 +729,8 @@ async function handleButton(interaction: any) {
     }
 
     const reservation = await storage.getReservationByUser(user.id);
-    // Allow Galarian bird selection for Regionals with galarian subCategory OR standard (none/null)
-    const subCat = reservation?.subCategory?.toLowerCase();
-    const validSubCategory = !subCat || subCat === 'galarian' || subCat === 'none';
-    if (!reservation || reservation.category !== 'Regionals' || !validSubCategory) {
+    if (!reservation || reservation.category !== 'Regionals') {
+      console.log("Galarian bird check failed:", { hasReservation: !!reservation, category: reservation?.category, subCategory: reservation?.subCategory });
       await interaction.reply({ content: 'No active Regional reservation found to set this choice.', ephemeral: true });
       return;
     }
