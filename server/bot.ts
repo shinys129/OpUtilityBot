@@ -458,10 +458,20 @@ async function handleSlashCommand(interaction: any) {
       const message = await interaction.reply({ embeds: [embed], components: buttons, fetchReply: true });
       
       // Save the new message ID
-      await storage.setOrgState(interaction.channel.id, message.id);
+      try {
+        await storage.setOrgState(interaction.channel.id, message.id);
+      } catch (storageError) {
+        console.error("Failed to save org state:", storageError);
+        // Continue anyway - the embed was created successfully
+      }
       
       // Send a follow-up message to confirm
-      await interaction.followUp({ content: "✅ Embed reloaded successfully! All reservation data has been preserved.", ephemeral: true });
+      try {
+        await interaction.followUp({ content: "✅ Embed reloaded successfully! All reservation data has been preserved.", ephemeral: true });
+      } catch (followUpError) {
+        console.error("Failed to send follow-up:", followUpError);
+        // The embed was created successfully, so we don't need to show an error to the user
+      }
     } catch (error) {
       console.error("Failed to reload embed:", error);
       try {
