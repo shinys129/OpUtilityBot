@@ -568,6 +568,7 @@ async function handleSlashCommand(interaction: any) {
     } else {
       await interaction.editReply({ content: "Data cleared. No org embed was found to close." });
     }
+    return;
   }
 
   // New: /setchannels - admin only: register channels for a category
