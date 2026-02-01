@@ -131,7 +131,25 @@ async function registerSlashCommands() {
 async function buildCategoryButtons(reservations: any[]): Promise<ActionRowBuilder<ButtonBuilder>[]> {
   const claimedCategories = new Map<string, string>();
   for (const r of reservations) {
+    // Skip Regionals - handled separately
+    if (r.category === 'Regionals') continue;
     claimedCategories.set(r.category.toLowerCase().replace(/\s+/g, ''), r.user.username);
+  }
+
+  // Special handling for Regionals
+  const regionalReservations = reservations.filter(r => r.category === 'Regionals');
+  const hasStandardRegional = regionalReservations.some(r => !r.subCategory || r.subCategory === 'none');
+  const takenSubcategories = regionalReservations.map(r => r.subCategory?.toLowerCase()).filter(Boolean);
+  const allThreeTaken = takenSubcategories.includes('galarian') && 
+                        takenSubcategories.includes('alolan') && 
+                        takenSubcategories.includes('hisuian');
+  const regionalsLocked = hasStandardRegional || allThreeTaken;
+  
+  // Build label for Regionals showing who has it
+  let regionalsLabel = 'Regionals (24-43)';
+  if (regionalReservations.length > 0) {
+    const names = regionalReservations.map(r => r.user.username).join(', ');
+    regionalsLabel = `Regionals (24-43) - ${names}`;
   }
 
   const isLocked = (catKey: string) => claimedCategories.has(catKey.toLowerCase());
@@ -149,9 +167,9 @@ async function buildCategoryButtons(reservations: any[]): Promise<ActionRowBuild
         .setDisabled(isLocked('rares')),
       new ButtonBuilder()
         .setCustomId('cat_regionals')
-        .setLabel(getLabel('regionals', 'Regionals', '24-43'))
-        .setStyle(isLocked('regionals') ? ButtonStyle.Secondary : ButtonStyle.Primary)
-        .setDisabled(isLocked('regionals')),
+        .setLabel(regionalsLabel)
+        .setStyle(regionalsLocked ? ButtonStyle.Secondary : ButtonStyle.Primary)
+        .setDisabled(regionalsLocked),
       new ButtonBuilder()
         .setCustomId('cat_gmax')
         .setLabel(getLabel('gmax', 'Gmax', '44-59'))
@@ -511,38 +529,40 @@ async function handleSlashCommand(interaction: any) {
       return;
     }
 
+    // Find the org message BEFORE clearing data
+    let orgMessage: DiscordMessage | null = null;
+    if (interaction.channel instanceof TextChannel) {
+      orgMessage = await findOrgMessage(interaction.channel);
+    }
+
     // Clear reservations and channel checks (reset isComplete but preserve mappings)
     try {
       await storage.clearReservations();
       await storage.clearChannelChecks();
-      await storage.clearOrgState(); // Clear stored org message ID
+      await storage.clearOrgState();
     } catch (err) {
       console.error("Failed to clear reservations/checks:", err);
-      await interaction.reply({ content: "Failed to clear data. Try again later.", ephemeral: true });
-      return;
+      // Continue anyway - try to close the embed
     }
 
-    // Attempt to find and "close" the org embed message in this channel by editing it and removing components
-    if (interaction.channel instanceof TextChannel) {
+    // Close the embed if found
+    if (orgMessage) {
       try {
-        const messages = await interaction.channel.messages.fetch({ limit: 50 });
-        const orgMessage = messages.find((m: DiscordMessage) => m.author.id === client?.user?.id && m.embeds.length > 0 && m.embeds[0].title && (m.embeds[0].title.includes('Pokemon Reservation') || m.embeds[0].title.includes('Reservation Hub')));
-        if (orgMessage) {
-          const closedEmbed = new EmbedBuilder()
-            .setTitle('Pokemon Reservation Status — CLOSED')
-            .setDescription('This organization round has been closed. Use /startorg to begin a fresh round.')
-            .setColor(0x808080)
-            .setTimestamp();
+        const closedEmbed = new EmbedBuilder()
+          .setTitle('Pokemon Reservation Status — CLOSED')
+          .setDescription('This organization round has been closed. Use /startorg to begin a fresh round.')
+          .setColor(0x808080)
+          .setTimestamp();
 
-          await orgMessage.edit({ embeds: [closedEmbed], components: [] });
-        }
+        await orgMessage.edit({ embeds: [closedEmbed], components: [] });
+        await interaction.reply({ content: "✅ Organization closed and reservations cleared. Use /startorg to begin a fresh round.", ephemeral: true });
       } catch (err) {
         console.error("Failed to edit org message during endorg:", err);
-        // still continue — we already cleared DB
+        await interaction.reply({ content: "Data cleared but failed to close the embed. You may need to delete it manually.", ephemeral: true });
       }
+    } else {
+      await interaction.reply({ content: "Data cleared. No org embed was found to close.", ephemeral: true });
     }
-
-    await interaction.reply({ content: "Organization closed and reservations cleared. Use /startorg to begin a fresh round.", ephemeral: true });
   }
 
   // New: /setchannels - admin only: register channels for a category
