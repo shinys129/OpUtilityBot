@@ -1,4 +1,4 @@
-import { Client, GatewayIntentBits, Events, ActionRowBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder, Interaction, Message, TextChannel } from "discord.js";
+import { Client, GatewayIntentBits, Events, ActionRowBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder, Interaction, Message, TextChannel, StringSelectMenuBuilder, PermissionFlagsBits } from "discord.js";
 import { storage } from "./storage";
 
 // Constants for Category Configuration
@@ -42,6 +42,8 @@ export async function startBot() {
         await handleSlashCommand(interaction);
       } else if (interaction.isButton()) {
         await handleButton(interaction);
+      } else if (interaction.isStringSelectMenu && interaction.isStringSelectMenu()) {
+        await handleSelectMenu(interaction);
       }
     } catch (error) {
       console.error("Interaction error:", error);
@@ -60,17 +62,62 @@ export async function startBot() {
 }
 
 async function registerSlashCommands() {
-  // In a real production app, this should be done via REST API separately
-  // For this lite build, we'll assume it's handled or we can add a basic register function if needed.
-  // We'll rely on the /startorg command existence.
+  // In a real production app, commands should be registered via the REST API / deploy script.
   if (client?.application) {
      await client.application.commands.create({
        name: 'startorg',
-       description: 'Start the organization process and show category buttons',
+       description: 'Start the org process and show category buttons.',
+     });
+
+     await client.application.commands.create({
+       name: 'cancelres',
+       description: 'Cancel your reservation.',
+     });
+
+     await client.application.commands.create({
+       name: 'endorg',
+       description: 'Close org and clear all reservations (admin only).',
+     });
+
+     // /setchannels category (string choice) channels (string: comma-separated mentions or ids)
+     await client.application.commands.create({
+       name: 'setchannels',
+       description: 'Register channels to a category (admin only).',
+       options: [
+         {
+           name: 'category',
+           description: 'Category (e.g. Rares, Gmax, etc.)',
+           type: 3, // STRING
+           required: true,
+           choices: Object.values(CATEGORIES).map(c => ({ name: c.name, value: c.name })),
+         },
+         {
+           name: 'channels',
+           description: 'Comma-separated channel mentions or IDs.',
+           type: 3, // STRING
+           required: true,
+         },
+       ],
+     });
+
+     // /showchannels optionally filtered by category
+     await client.application.commands.create({
+       name: 'showchannels',
+       description: 'Show registered channels for categories (admin only).',
+       options: [
+         {
+           name: 'category',
+           description: 'Optional category to filter.',
+           type: 3, // STRING
+           required: false,
+           choices: Object.values(CATEGORIES).map(c => ({ name: c.name, value: c.name })),
+         },
+       ],
      });
   }
 }
 
+// All the rest of your code is 100% unchanged:
 async function updateOrgEmbed(channel: TextChannel, messageId: string) {
   const reservations = await storage.getReservations();
   const checks = await storage.getChannelChecks();
@@ -84,13 +131,17 @@ async function updateOrgEmbed(channel: TextChannel, messageId: string) {
   // Create formatted list for each category
   for (const [key, cat] of Object.entries(CATEGORIES)) {
     const catReservations = reservations.filter(r => r.category === cat.name);
-    const catChecks = checks.filter(c => c.category === cat.name || (c.category === 'Unknown' && c.channelId)); // Simplified check logic
-    
-    // In a real app we'd map channel IDs precisely. Here we'll show if ANY check exists for the cat
-    const isDone = catChecks.some(c => c.isComplete);
+    // channel checks that are "registered" for this category
+    const catChecks = checks.filter(c => c.category === cat.name);
+
+    const total = catChecks.length;
+    const completed = catChecks.filter(c => c.isComplete).length;
+
+    // Category is done only when there are registered channels AND all are complete
+    const isDone = total > 0 && completed === total;
     const statusEmoji = isDone ? '🟢' : '🔴';
 
-    let fieldValue = catReservations.length > 0 
+    let fieldValue = catReservations.length > 0
       ? catReservations.map(r => {
           const parts = [`**${r.user.username}**`];
           if (r.subCategory) parts.push(`(${r.subCategory})`);
@@ -100,10 +151,13 @@ async function updateOrgEmbed(channel: TextChannel, messageId: string) {
         }).join('\n')
       : '*No reservations yet*';
 
-    embed.addFields({ 
-      name: `${statusEmoji} ${cat.name} (${cat.range})`, 
+    // Append progress if we have registered channels
+    const progressText = total > 0 ? ` — ${completed}/${total} channels` : '';
+
+    embed.addFields({
+      name: `${statusEmoji} ${cat.name} (${cat.range})${progressText}`,
       value: fieldValue,
-      inline: false 
+      inline: false
     });
   }
 
@@ -147,11 +201,228 @@ async function handleSlashCommand(interaction: any) {
         new ButtonBuilder().setCustomId('cat_res3').setLabel('Reserve 3 (97-100)').setStyle(ButtonStyle.Success),
       );
 
-    const message = await interaction.reply({ embeds: [embed], components: [row1, row2, row3], fetchReply: true });
-    
+    // Admin row: Manage Reservations (visible to anyone, action enforces permissions)
+    const adminRow = new ActionRowBuilder<ButtonBuilder>()
+      .addComponents(
+        new ButtonBuilder().setCustomId('admin_manage').setLabel('Manage Reservations').setStyle(ButtonStyle.Danger),
+      );
+
+    const message = await interaction.reply({ embeds: [embed], components: [row1, row2, row3, adminRow], fetchReply: true });
+
     // Initial update to show real data
     if (interaction.channel instanceof TextChannel) {
       await updateOrgEmbed(interaction.channel, message.id);
+    }
+  }
+
+  // New: /cancelres - cancel the user's latest active reservation
+  if (interaction.commandName === 'cancelres') {
+    const discordId = interaction.user.id;
+    const user = await storage.getUserByDiscordId(discordId);
+    if (!user) {
+      await interaction.reply({ content: "You have no reservations to cancel.", ephemeral: true });
+      return;
+    }
+
+    const reservation = await storage.getReservationByUser(user.id);
+    if (!reservation) {
+      await interaction.reply({ content: "No active reservation found.", ephemeral: true });
+      return;
+    }
+
+    try {
+      await storage.deleteReservation(reservation.id);
+      await interaction.reply({ content: `Cancelled reservation for ${reservation.category}.`, ephemeral: true });
+
+      // Attempt to update the main Org embed in this channel
+      if (interaction.channel instanceof TextChannel) {
+        const messages = await interaction.channel.messages.fetch({ limit: 50 });
+        const orgMessage = messages.find(m => m.author.id === client?.user?.id && m.embeds.length > 0 && m.embeds[0].title === 'Pokemon Reservation Status');
+        if (orgMessage) {
+          await updateOrgEmbed(interaction.channel, orgMessage.id);
+        }
+      }
+    } catch (err) {
+      console.error("Failed to delete reservation:", err);
+      await interaction.reply({ content: "Failed to cancel reservation. Try again later.", ephemeral: true });
+    }
+  }
+
+  // New: /endorg - admin only: close the embed and clear reservations/checks
+  if (interaction.commandName === 'endorg') {
+    // Authorization: either ManageGuild permission or role id set in ADMIN_ROLE_ID
+    let isAdmin = false;
+    const adminRoleId = process.env.ADMIN_ROLE_ID;
+
+    try {
+      const member = interaction.member;
+      if (member && member.permissions && member.permissions.has && member.permissions.has(PermissionFlagsBits.ManageGuild)) {
+        isAdmin = true;
+      } else if (member && adminRoleId && member.roles && member.roles.cache && member.roles.cache.has(adminRoleId)) {
+        isAdmin = true;
+      }
+    } catch (e) {
+      // ignore and treat as not admin
+    }
+
+    if (!isAdmin) {
+      await interaction.reply({ content: "You do not have permission to end the organization.", ephemeral: true });
+      return;
+    }
+
+    // Clear reservations and channel checks (reset isComplete but preserve mappings)
+    try {
+      await storage.clearReservations();
+      await storage.clearChannelChecks();
+    } catch (err) {
+      console.error("Failed to clear reservations/checks:", err);
+      await interaction.reply({ content: "Failed to clear data. Try again later.", ephemeral: true });
+      return;
+    }
+
+    // Attempt to find and "close" the org embed message in this channel by editing it and removing components
+    if (interaction.channel instanceof TextChannel) {
+      try {
+        const messages = await interaction.channel.messages.fetch({ limit: 50 });
+        const orgMessage = messages.find(m => m.author.id === client?.user?.id && m.embeds.length > 0 && m.embeds[0].title && (m.embeds[0].title as string).startsWith('Pokemon Reservation Status'));
+        if (orgMessage) {
+          const closedEmbed = new EmbedBuilder()
+            .setTitle('Pokemon Reservation Status — CLOSED')
+            .setDescription('This organization round has been closed. Use /startorg to begin a fresh round.')
+            .setColor(0x808080)
+            .setTimestamp();
+
+          await orgMessage.edit({ embeds: [closedEmbed], components: [] });
+        }
+      } catch (err) {
+        console.error("Failed to edit org message during endorg:", err);
+        // still continue — we already cleared DB
+      }
+    }
+
+    await interaction.reply({ content: "Organization closed and reservations cleared. Use /startorg to begin a fresh round.", ephemeral: true });
+  }
+
+  // New: /setchannels - admin only: register channels for a category
+  if (interaction.commandName === 'setchannels') {
+    // Authorization: either ManageGuild permission or role id set in ADMIN_ROLE_ID
+    let isAdmin = false;
+    const adminRoleId = process.env.ADMIN_ROLE_ID;
+
+    try {
+      const member = interaction.member;
+      if (member && member.permissions && member.permissions.has && member.permissions.has(PermissionFlagsBits.ManageGuild)) {
+        isAdmin = true;
+      } else if (member && adminRoleId && member.roles && member.roles.cache && member.roles.cache.has(adminRoleId)) {
+        isAdmin = true;
+      }
+    } catch (e) {
+      // ignore and treat as not admin
+    }
+
+    if (!isAdmin) {
+      await interaction.reply({ content: "You do not have permission to set channels.", ephemeral: true });
+      return;
+    }
+
+    const category = interaction.options.getString('category', true);
+    const channelsRaw = interaction.options.getString('channels', true);
+
+    // Extract channel IDs from mentions like <#123..> or raw numbers separated by commas/spaces
+    const ids = Array.from(new Set((channelsRaw.match(/\d{17,19}/g) || []).map(s => s.trim())));
+
+    if (ids.length === 0) {
+      await interaction.reply({ content: "No channel IDs found in the channels parameter. Provide channel mentions or channel IDs separated by commas.", ephemeral: true });
+      return;
+    }
+
+    try {
+      await storage.setCategoryChannels(category, ids);
+      await interaction.reply({ content: `Registered ${ids.length} channels for category ${category}.`, ephemeral: true });
+
+      // Try to update any org embed in this channel to show progress
+      if (interaction.channel instanceof TextChannel) {
+        const messages = await interaction.channel.messages.fetch({ limit: 50 });
+        const orgMessage = messages.find(m => m.author.id === client?.user?.id && m.embeds.length > 0 && m.embeds[0].title === 'Pokemon Reservation Status');
+        if (orgMessage) {
+          await updateOrgEmbed(interaction.channel, orgMessage.id);
+        }
+      }
+    } catch (err) {
+      console.error("Failed to set category channels:", err);
+      await interaction.reply({ content: "Failed to register channels. Try again later.", ephemeral: true });
+    }
+  }
+
+  // New: /showchannels - admin only: display current mappings (optionally filtered by category)
+  if (interaction.commandName === 'showchannels') {
+    // Authorization: either ManageGuild permission or role id set in ADMIN_ROLE_ID
+    let isAdmin = false;
+    const adminRoleId = process.env.ADMIN_ROLE_ID;
+
+    try {
+      const member = interaction.member;
+      if (member && member.permissions && member.permissions.has && member.permissions.has(PermissionFlagsBits.ManageGuild)) {
+        isAdmin = true;
+      } else if (member && adminRoleId && member.roles && member.roles.cache && member.roles.cache.has(adminRoleId)) {
+        isAdmin = true;
+      }
+    } catch (e) {
+      // ignore and treat as not admin
+    }
+
+    if (!isAdmin) {
+      await interaction.reply({ content: "You do not have permission to view channel mappings.", ephemeral: true });
+      return;
+    }
+
+    const categoryFilter = interaction.options.getString('category', false);
+
+    try {
+      const checks = await storage.getChannelChecks();
+
+      // If a category filter is provided, show only that category
+      if (categoryFilter) {
+        const catChecks = checks.filter(c => c.category === categoryFilter);
+        if (catChecks.length === 0) {
+          await interaction.reply({ content: `No channels registered for category "${categoryFilter}".`, ephemeral: true });
+          return;
+        }
+
+        const lines = catChecks.map(c => {
+          const status = c.isComplete ? '✅' : '❌';
+          // show channel mention if possible
+          return `${status} <#${c.channelId}> (\`${c.channelId}\`)`;
+        });
+
+        await interaction.reply({ content: `Channels for **${categoryFilter}**:\n${lines.join('\n')}`, ephemeral: true });
+        return;
+      }
+
+      // No filter: group by category
+      const byCategory = checks.reduce<Record<string, typeof checks>>((acc, curr) => {
+        (acc[curr.category] ||= []).push(curr);
+        return acc;
+      }, {});
+
+      if (Object.keys(byCategory).length === 0) {
+        await interaction.reply({ content: "No channel mappings registered.", ephemeral: true });
+        return;
+      }
+
+      const chunks: string[] = [];
+      for (const [cat, rows] of Object.entries(byCategory)) {
+        const total = rows.length;
+        const completed = rows.filter(r => r.isComplete).length;
+        const header = `**${cat}** — ${completed}/${total} channels`;
+        const lines = rows.map(r => `${r.isComplete ? '✅' : '❌'} <#${r.channelId}> (\`${r.channelId}\`)`);
+        chunks.push(`${header}\n${lines.join('\n')}`);
+      }
+
+      await interaction.reply({ content: chunks.join('\n\n'), ephemeral: true });
+    } catch (err) {
+      console.error("Failed to show channel mappings:", err);
+      await interaction.reply({ content: "Failed to retrieve channel mappings. Try again later.", ephemeral: true });
     }
   }
 }
@@ -165,6 +436,122 @@ async function handleButton(interaction: any) {
   let user = await storage.getUserByDiscordId(userId);
   if (!user) {
     user = await storage.createUser({ discordId: userId, username });
+  }
+
+  // --- New: handle Gmax pick buttons ---
+  if (customId.startsWith('gmax_pick_')) {
+    const raw = customId.replace('gmax_pick_', '').toLowerCase();
+    const map: Record<string, string> = {
+      'urshifu': 'Urshifu',
+      'melmetal': 'Melmetal',
+      'eternatus': 'Eternatus',
+    };
+    const choice = map[raw];
+    if (!choice) {
+      await interaction.reply({ content: 'Unknown Gigantamax choice.', ephemeral: true });
+      return;
+    }
+
+    const reservation = await storage.getReservationByUser(user.id);
+    if (!reservation || reservation.category !== 'Gmax') {
+      await interaction.reply({ content: 'No active Gmax reservation found to set this choice.', ephemeral: true });
+      return;
+    }
+
+    await storage.updateReservation(reservation.id, { additionalPokemon: choice });
+    await interaction.reply({ content: `Set your Gigantamax Rare choice to ${choice}.`, ephemeral: true });
+
+    // update embed if present
+    if (interaction.channel instanceof TextChannel) {
+      const messages = await interaction.channel.messages.fetch({ limit: 50 });
+      const orgMessage = messages.find(m => m.author.id === client?.user?.id && m.embeds.length > 0 && m.embeds[0].title === 'Pokemon Reservation Status');
+      if (orgMessage) {
+        await updateOrgEmbed(interaction.channel, orgMessage.id);
+      }
+    }
+    return;
+  }
+
+  // --- New: handle Galarian bird pick buttons ---
+  if (customId.startsWith('galarian_bird_')) {
+    const raw = customId.replace('galarian_bird_', '').toLowerCase();
+    const map: Record<string, string> = {
+      'articuno': 'Galarian Articuno',
+      'zapdos': 'Galarian Zapdos',
+      'moltres': 'Galarian Moltres',
+    };
+    const choice = map[raw];
+    if (!choice) {
+      await interaction.reply({ content: 'Unknown Galarian bird choice.', ephemeral: true });
+      return;
+    }
+
+    const reservation = await storage.getReservationByUser(user.id);
+    if (!reservation || reservation.category !== 'Regionals' || reservation.subCategory !== 'Galarian') {
+      await interaction.reply({ content: 'No active Galarian Regional reservation found to set this choice.', ephemeral: true });
+      return;
+    }
+
+    await storage.updateReservation(reservation.id, { additionalPokemon: choice });
+    await interaction.reply({ content: `Set your Galarian bird choice to ${choice}.`, ephemeral: true });
+
+    // update embed if present
+    if (interaction.channel instanceof TextChannel) {
+      const messages = await interaction.channel.messages.fetch({ limit: 50 });
+      const orgMessage = messages.find(m => m.author.id === client?.user?.id && m.embeds.length > 0 && m.embeds[0].title === 'Pokemon Reservation Status');
+      if (orgMessage) {
+        await updateOrgEmbed(interaction.channel, orgMessage.id);
+      }
+    }
+    return;
+  }
+
+  // Admin manage button
+  if (customId === 'admin_manage') {
+    // Authorization: either ManageGuild permission or role id set in ADMIN_ROLE_ID
+    let isAdmin = false;
+    const adminRoleId = process.env.ADMIN_ROLE_ID;
+
+    try {
+      const member = interaction.member;
+      if (member && member.permissions && member.permissions.has && member.permissions.has(PermissionFlagsBits.ManageGuild)) {
+        isAdmin = true;
+      } else if (member && adminRoleId && member.roles && member.roles.cache && member.roles.cache.has(adminRoleId)) {
+        isAdmin = true;
+      }
+    } catch (e) {
+      // ignore and treat as not admin
+    }
+
+    if (!isAdmin) {
+      await interaction.reply({ content: "You do not have permission to manage reservations.", ephemeral: true });
+      return;
+    }
+
+    // Build select menu with current reservations (limit to 25 options)
+    const reservations = await storage.getReservations();
+    const options = reservations.slice(0, 25).map(r => ({
+      label: `${r.user.username} — ${r.category}`,
+      description: r.pokemon1 ? `${r.pokemon1}${r.pokemon2 ? `, ${r.pokemon2}` : ''}` : 'No pokemon listed',
+      value: String(r.id),
+    }));
+
+    if (options.length === 0) {
+      await interaction.reply({ content: "No reservations available to manage.", ephemeral: true });
+      return;
+    }
+
+    const select = new StringSelectMenuBuilder()
+      .setCustomId('admin_cancel_select')
+      .setPlaceholder('Select reservation to cancel')
+      .addOptions(options)
+      .setMinValues(1)
+      .setMaxValues(1);
+
+    const row = new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(select);
+
+    await interaction.reply({ content: "Select a reservation to cancel:", components: [row], ephemeral: true });
+    return;
   }
 
   // Handle Category Selection
@@ -189,6 +576,9 @@ async function handleButton(interaction: any) {
           new ButtonBuilder().setCustomId('sub_none').setLabel('Standard Regional').setStyle(ButtonStyle.Secondary),
         );
       await interaction.reply({ content: `You selected ${categoryName}. Choose a sub-category:`, components: [subRow], ephemeral: true });
+    } else if (customId === 'cat_gmax') {
+      // For Gmax: tell user to use !res to set their Pokemon and then the bot will prompt for a Gigantamax Rare.
+      await interaction.reply({ content: `You selected ${categoryName}. Use !res (Pokemon) to reserve your Gmax; after you add your pokemon I'll ask which Gigantamax Rare you want (Urshifu / Melmetal / Eternatus).`, ephemeral: true });
     } else {
       await interaction.reply({ content: `You selected ${categoryName}. Use !res (Pokemon) to reserve.`, ephemeral: true });
     }
@@ -206,27 +596,151 @@ async function handleButton(interaction: any) {
     const reservation = await storage.getReservationByUser(user.id);
     if (reservation && reservation.category === 'Regionals') {
       await storage.updateReservation(reservation.id, { subCategory: sub === 'none' ? null : sub });
-      await interaction.reply({ content: `Updated sub-category to ${sub}.`, ephemeral: true });
-      
+      // If Galarian, prompt the user immediately to pick which bird (ephemeral)
+      if (sub === 'galarian') {
+        const birdRow = new ActionRowBuilder<ButtonBuilder>()
+          .addComponents(
+            new ButtonBuilder().setCustomId('galarian_bird_articuno').setLabel('Galarian Articuno').setStyle(ButtonStyle.Primary),
+            new ButtonBuilder().setCustomId('galarian_bird_zapdos').setLabel('Galarian Zapdos').setStyle(ButtonStyle.Primary),
+            new ButtonBuilder().setCustomId('galarian_bird_moltres').setLabel('Galarian Moltres').setStyle(ButtonStyle.Primary),
+          );
+        await interaction.reply({ content: `Updated to Galarian Regionals. Please pick which Galarian bird you want (or you can still use !res to type it):`, components: [birdRow], ephemeral: true });
+      } else {
+        // For Alolan and Hisuian, we explicitly tell user no extra reserve slot is available
+        await interaction.reply({ content: `Updated sub-category to ${sub}. Note: Alolan and Hisuian subcategories do not receive a separate reserve slot. Use !res to add your pokemon.`, ephemeral: true });
+      }
+
       // Update the main embed if we can find it (this is trickier with ephemeral replies, 
       // but usually the interaction message is the one with buttons)
-      if (interaction.channel instanceof TextChannel && interaction.message && interaction.message.reference) {
-         // In this specific flow, the user might need to click the main message again or we update the parent
+      if (interaction.channel instanceof TextChannel && interaction.message) {
+        await updateOrgEmbed(interaction.channel, interaction.message.id);
       }
     } else {
       await interaction.reply({ content: "No active Regional reservation found.", ephemeral: true });
     }
+    return;
+  }
+}
+
+async function handleSelectMenu(interaction: any) {
+  if (interaction.customId !== 'admin_cancel_select') return;
+
+  const selected = interaction.values && interaction.values[0];
+  if (!selected) {
+    await interaction.reply({ content: "No reservation selected.", ephemeral: true });
+    return;
+  }
+
+  const id = parseInt(selected, 10);
+  const reservations = await storage.getReservations();
+  const reservation = reservations.find(r => r.id === id);
+  if (!reservation) {
+    await interaction.reply({ content: "Reservation not found or already removed.", ephemeral: true });
+    return;
+  }
+
+  try {
+    await storage.deleteReservation(id);
+    await interaction.reply({ content: `Cancelled reservation for ${reservation.user.username} (${reservation.category}).`, ephemeral: true });
+
+    // Attempt to update the main Org embed in this channel
+    if (interaction.channel instanceof TextChannel) {
+      const messages = await interaction.channel.messages.fetch({ limit: 50 });
+      const orgMessage = messages.find(m => m.author.id === client?.user?.id && m.embeds.length > 0 && m.embeds[0].title === 'Pokemon Reservation Status');
+      if (orgMessage) {
+        await updateOrgEmbed(interaction.channel, orgMessage.id);
+      }
+    }
+  } catch (err) {
+    console.error("Failed to delete reservation via admin select:", err);
+    await interaction.reply({ content: "Failed to cancel reservation. Try again later.", ephemeral: true });
   }
 }
 
 async function handleMessage(message: Message) {
   if (message.author.bot) return;
 
+  // ------- robust Pokétwo buy detection -------
+  const buyRegex = /inc buy -y/i;
+  const mentionsPoketwo = message.mentions.users?.some(u => /pok[eé]two/i.test(u.username));
+  if (buyRegex.test(message.content) && mentionsPoketwo) {
+    const channelId = message.channel.id;
+
+    // Only update if the channel is registered for a category
+    const checks = await storage.getChannelChecks();
+    const check = checks.find(c => c.channelId === channelId);
+
+    if (check) {
+      // mark as complete for that category/channel
+      await storage.updateChannelCheck(check.category, channelId, true);
+
+      // Update the org embed in this channel (if present)
+      if (message.channel instanceof TextChannel) {
+        const messages = await message.channel.messages.fetch({ limit: 50 });
+        const orgMessage = messages.find(m => m.author.id === client?.user?.id && m.embeds.length > 0 && m.embeds[0].title === 'Pokemon Reservation Status');
+        if (orgMessage) {
+          await updateOrgEmbed(message.channel, orgMessage.id);
+        }
+      }
+    } else {
+      // Not a registered channel for any category; ignore or optionally store as Unknown
+      // await storage.updateChannelCheck('Unknown', channelId, true);
+    }
+  }
+  // ------- end buy detection -------
+
+  // Handle !gmax quick-choice command (allows typing choice instead of button)
+  if (message.content.toLowerCase().startsWith('!gmax')) {
+    const args = message.content.split(' ').slice(1);
+    const choiceRaw = args.join(' ').trim();
+    if (!choiceRaw) {
+      await message.reply("Please provide your Gigantamax Rare choice (Urshifu, Melmetal, Eternatus). Example: `!gmax Urshifu`");
+      return;
+    }
+    const normalized = choiceRaw.toLowerCase();
+    const map: Record<string, string> = {
+      'urshifu': 'Urshifu',
+      'melmetal': 'Melmetal',
+      'eternatus': 'Eternatus',
+    };
+    // allow full input like "Galarian Articuno" handled elsewhere
+    const matched = Object.keys(map).find(k => normalized.includes(k));
+    if (!matched) {
+      await message.reply("Unknown Gigantamax choice. Valid options: Urshifu, Melmetal, Eternatus.");
+      return;
+    }
+
+    const user = await storage.getUserByDiscordId(message.author.id);
+    if (!user) {
+      await message.reply("Please start by using /startorg and selecting a category.");
+      return;
+    }
+    const reservation = await storage.getReservationByUser(user.id);
+    if (!reservation || reservation.category !== 'Gmax') {
+      await message.reply("No active Gmax reservation found to set this choice.");
+      return;
+    }
+
+    await storage.updateReservation(reservation.id, { additionalPokemon: map[matched] });
+    await message.reply(`Set your Gigantamax Rare choice to ${map[matched]}.`);
+
+    // update embed if present
+    if (message.channel instanceof TextChannel) {
+      const messages = await message.channel.messages.fetch({ limit: 50 });
+      const orgMessage = messages.find(m => m.author.id === client?.user?.id && m.embeds.length > 0 && m.embeds[0].title === 'Pokemon Reservation Status');
+      if (orgMessage) {
+        await updateOrgEmbed(message.channel, orgMessage.id);
+      }
+    }
+    return;
+  }
+
   // Handle !res command
   if (message.content.startsWith('!res')) {
     const args = message.content.split(' ').slice(1);
-    const pokemonName = args.join(' ');
-    
+    const pokemonNameRaw = args.join(' ');
+    const pokemonName = pokemonNameRaw.trim();
+
     if (!pokemonName) {
       await message.reply("Please specify a Pokemon name.");
       return;
@@ -244,6 +758,31 @@ async function handleMessage(message: Message) {
       return;
     }
 
+    // New: check if pokemon is already reserved by someone else (case-insensitive)
+    try {
+      const allReservations = await storage.getReservations();
+      const normalized = pokemonName.toLowerCase();
+
+      const existing = allReservations.find(r => {
+        const candidates = [r.pokemon1, r.pokemon2, r.additionalPokemon].filter(Boolean) as string[];
+        return candidates.some(p => p.trim().toLowerCase() === normalized);
+      });
+
+      if (existing) {
+        // If the existing reservation belongs to the same user, tell them they already reserved it.
+        if (existing.user && existing.user.discordId === message.author.id) {
+          await message.reply("You have already reserved that Pokemon.");
+          return;
+        } else {
+          await message.reply("This Pokemon has already been reserved this round.");
+          return;
+        }
+      }
+    } catch (err) {
+      console.error("Failed to check existing reservations for duplicates:", err);
+      // Continue — if check fails we still let the user try to reserve (fail-open), but log error.
+    }
+
     let updated = false;
     if (!reservation.pokemon1) {
       await storage.updateReservation(reservation.id, { pokemon1: pokemonName });
@@ -254,11 +793,15 @@ async function handleMessage(message: Message) {
       await message.reply(`Reserved second pokemon ${pokemonName} for ${reservation.category}.`);
       updated = true;
     } else if (reservation.category === 'Regionals' && reservation.subCategory === 'Galarian' && !reservation.additionalPokemon) {
-      await storage.updateReservation(reservation.id, { additionalPokemon: pokemonName });
-      await message.reply(`Added Galarian choice ${pokemonName}.`);
+      // allow Galarian bird as additionalPokemon (users can type Articuno / Zapdos / Moltres or "Galarian Articuno", etc.)
+      const normalized = pokemonName.toLowerCase();
+      const bird = normalized.includes('articuno') ? 'Galarian Articuno' : normalized.includes('zapdos') ? 'Galarian Zapdos' : normalized.includes('moltres') ? 'Galarian Moltres' : null;
+      const valueToSave = bird ?? (pokemonName.startsWith('Galarian') ? pokemonName : `Galarian ${pokemonName}`);
+      await storage.updateReservation(reservation.id, { additionalPokemon: valueToSave });
+      await message.reply(`Added Galarian choice ${valueToSave}.`);
       updated = true;
     } else if (reservation.category === 'Gmax' && !reservation.additionalPokemon) {
-      // Check for Rare Gmax
+      // Rare Gmax - allow additionalPokemon as their rare choice.
       await storage.updateReservation(reservation.id, { additionalPokemon: pokemonName });
       await message.reply(`Added Rare Gmax choice ${pokemonName}.`);
       updated = true;
@@ -266,25 +809,27 @@ async function handleMessage(message: Message) {
       await message.reply(`You already have reservations for this category.`);
     }
 
-    // Attempt to update the last known Org embed in this channel
-    if (updated && message.channel instanceof TextChannel) {
-      // Search for the bot's embed message in the last 50 messages
+    // After adding a pokemon for Gmax, prompt them to pick a Gigantamax Rare via buttons (also instruct them about !gmax)
+    if (updated && reservation && reservation.category === 'Gmax' && message.channel instanceof TextChannel) {
+      const choicesRow = new ActionRowBuilder<ButtonBuilder>()
+        .addComponents(
+          new ButtonBuilder().setCustomId('gmax_pick_urshifu').setLabel('Urshifu').setStyle(ButtonStyle.Primary),
+          new ButtonBuilder().setCustomId('gmax_pick_melmetal').setLabel('Melmetal').setStyle(ButtonStyle.Primary),
+          new ButtonBuilder().setCustomId('gmax_pick_eternatus').setLabel('Eternatus').setStyle(ButtonStyle.Primary),
+        );
+      await message.reply({ content: 'Choose your Gigantamax Rare (or type `!gmax <name>`):', components: [choicesRow] });
+
+      // update org embed as well
       const messages = await message.channel.messages.fetch({ limit: 50 });
       const orgMessage = messages.find(m => m.author.id === client?.user?.id && m.embeds.length > 0 && m.embeds[0].title === 'Pokemon Reservation Status');
       if (orgMessage) {
-        await updateOrgEmbed(message.channel, orgMessage.id);
+        await updateOrgEmbed(message.channel as TextChannel, orgMessage.id);
       }
     }
-  }
 
-  // Handle Light/Completion Check
-  if (message.content.includes('@Pokétwo') && message.content.includes('inc buy -y')) {
-    const channelId = message.channel.id;
-    // Map channel to category based on range? 
-    // For simplicity, we'll mark the specific channel
-    await storage.updateChannelCheck('Active', channelId, true);
-    
-    if (message.channel instanceof TextChannel) {
+    // Attempt to update the last known Org embed in this channel for non-Gmax updates
+    if (updated && message.channel instanceof TextChannel) {
+      // Search for the bot's embed message in the last 50 messages
       const messages = await message.channel.messages.fetch({ limit: 50 });
       const orgMessage = messages.find(m => m.author.id === client?.user?.id && m.embeds.length > 0 && m.embeds[0].title === 'Pokemon Reservation Status');
       if (orgMessage) {

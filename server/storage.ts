@@ -18,10 +18,23 @@ export interface IStorage {
   getReservationByUser(userId: number): Promise<Reservation | undefined>; // Get latest active?
   createReservation(reservation: InsertReservation): Promise<Reservation>;
   updateReservation(id: number, updates: Partial<Reservation>): Promise<Reservation>;
+  deleteReservation(id: number): Promise<void>;
+
+  // New: clear all reservations (used by /endorg)
+  clearReservations(): Promise<void>;
 
   // Channel Check operations
   getChannelChecks(): Promise<ChannelCheck[]>;
   updateChannelCheck(category: string, channelId: string, isComplete: boolean): Promise<ChannelCheck>;
+
+  // New: set the list of channel IDs that belong to a category
+  setCategoryChannels(category: string, channelIds: string[]): Promise<void>;
+
+  // New: clear mappings for a category
+  clearCategoryChannels(category: string): Promise<void>;
+
+  // New: clear/reset all channel checks (used by /endorg) — now resets isComplete to false instead of deleting mappings
+  clearChannelChecks(): Promise<void>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -81,6 +94,21 @@ export class DatabaseStorage implements IStorage {
     return reservation;
   }
 
+  async deleteReservation(id: number): Promise<void> {
+    // Remove the reservation row so that the slot can be reselected.
+    await db.delete(reservations).where(eq(reservations.id, id));
+  }
+
+  async clearReservations(): Promise<void> {
+    // Delete all reservations. Use a safe approach: select ids then delete by id.
+    const rows = await db.select({ id: reservations.id }).from(reservations);
+    for (const r of rows) {
+      // r.id exists since we selected it
+      // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+      await db.delete(reservations).where(eq(reservations.id, r.id!));
+    }
+  }
+
   async getChannelChecks(): Promise<ChannelCheck[]> {
     return await db.select().from(channelChecks);
   }
@@ -102,6 +130,31 @@ export class DatabaseStorage implements IStorage {
         .values({ category, channelId, isComplete })
         .returning();
       return created;
+    }
+  }
+
+  async setCategoryChannels(category: string, channelIds: string[]): Promise<void> {
+    // Remove any existing mappings for this category, then insert the provided list with isComplete=false
+    await db.delete(channelChecks).where(eq(channelChecks.category, category));
+
+    if (channelIds.length === 0) return;
+
+    // Bulk insert - drizzle may not support bulk insert as array in your version, so insert sequentially
+    for (const cid of channelIds) {
+      await db.insert(channelChecks).values({ category, channelId: cid, isComplete: false });
+    }
+  }
+
+  async clearCategoryChannels(category: string): Promise<void> {
+    await db.delete(channelChecks).where(eq(channelChecks.category, category));
+  }
+
+  async clearChannelChecks(): Promise<void> {
+    // Instead of deleting mappings, reset their isComplete flag to false so mappings persist.
+    const rows = await db.select({ id: channelChecks.id }).from(channelChecks);
+    for (const c of rows) {
+      // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+      await db.update(channelChecks).set({ isComplete: false, updatedAt: new Date() }).where(eq(channelChecks.id, c.id!));
     }
   }
 }
