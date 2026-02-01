@@ -357,15 +357,7 @@ async function handleSlashCommand(interaction: any) {
       await interaction.editReply({ content: "✅ Embed refreshed successfully! All data preserved." });
     } catch (error) {
       console.error("Failed to refresh embed:", error);
-      try {
-        if (interaction.deferred || interaction.replied) {
-          await interaction.editReply({ content: "Failed to refresh embed. Please try again." });
-        } else {
-          await interaction.reply({ content: "Failed to refresh embed. Please try again.", ephemeral: true });
-        }
-      } catch (e) {
-        // ignore
-      }
+      await interaction.editReply({ content: "Failed to refresh embed. Please try again." });
     }
   }
 
@@ -379,19 +371,71 @@ async function handleSlashCommand(interaction: any) {
     try {
       // Get current reservations
       const reservations = await storage.getReservations();
-      const buttons = await buildCategoryButtons(reservations);
+      const checks = await storage.getChannelChecks();
+      
+      const totalReservations = reservations.length;
+      const totalCategories = Object.keys(CATEGORIES).length;
+      const filledCategories = new Set(reservations.map(r => r.category)).size;
 
-      // Create a fresh embed with current data
+      // Build the full embed with all reservation data
       const embed = new EmbedBuilder()
         .setTitle('⚡ Pokemon Reservation Hub')
-        .setDescription('Reloading status...')
-        .setColor(0x5865F2);
+        .setDescription(
+          `**Organization Status**\n` +
+          `━━━━━━━━━━━━━━━━━━━━━━\n` +
+          `📊 **${filledCategories}/${totalCategories}** categories filled\n` +
+          `👥 **${totalReservations}** active reservations\n` +
+          `━━━━━━━━━━━━━━━━━━━━━━\n\n` +
+          `Click a category button below to claim it.\nUse \`/cancelres\` to release your slot.`
+        )
+        .setColor(0x5865F2)
+        .setThumbnail('https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/items/master-ball.png')
+        .setFooter({ text: 'Use /refreshorg to update • /reloadorg if stuck • /endorg to close' })
+        .setTimestamp();
 
-      // Send new embed
+      // Add fields for each category with reservation info
+      for (const [key, cat] of Object.entries(CATEGORIES)) {
+        const catReservations = reservations.filter(r => r.category === cat.name);
+        const catChecks = checks.filter(c => c.category === cat.name);
+
+        const total = catChecks.length;
+        const completed = catChecks.filter(c => c.isComplete).length;
+
+        const isDone = total > 0 && completed === total;
+        const isClaimed = catReservations.length > 0;
+        
+        let statusEmoji = '⬜';
+        if (isDone) statusEmoji = '✅';
+        else if (isClaimed) statusEmoji = '🟡';
+
+        let fieldValue: string;
+        if (catReservations.length > 0) {
+          fieldValue = catReservations.map(r => {
+            const parts = [`┃ 👤 **${r.user.username}**`];
+            if (r.subCategory) parts.push(`\`${r.subCategory}\``);
+            const pokemon = [r.pokemon1, r.pokemon2, r.additionalPokemon].filter(Boolean);
+            if (pokemon.length > 0) {
+              parts.push(`\n┃ 🎯 ${pokemon.join(' • ')}`);
+            }
+            return parts.join(' ');
+          }).join('\n');
+        } else {
+          fieldValue = '┃ *Available - click button to claim*';
+        }
+
+        const progressBar = total > 0 ? ` [${completed}/${total}]` : '';
+
+        embed.addFields({
+          name: `${statusEmoji} ${cat.name} (${cat.range})${progressBar}`,
+          value: fieldValue,
+          inline: true
+        });
+      }
+
+      const buttons = await buildCategoryButtons(reservations);
+
+      // Send new embed with full data
       const message = await interaction.reply({ embeds: [embed], components: buttons, fetchReply: true });
-
-      // Update it with full data
-      await updateOrgEmbed(interaction.channel, message.id);
       
       // Save the new message ID
       await storage.setOrgState(interaction.channel.id, message.id);
@@ -400,7 +444,15 @@ async function handleSlashCommand(interaction: any) {
       await interaction.followUp({ content: "✅ Embed reloaded successfully! All reservation data has been preserved.", ephemeral: true });
     } catch (error) {
       console.error("Failed to reload embed:", error);
-      await interaction.reply({ content: "Failed to reload embed. Please try again or use `/startorg`.", ephemeral: true });
+      try {
+        if (interaction.replied || interaction.deferred) {
+          await interaction.followUp({ content: "Failed to reload embed. Please try again or use `/startorg`.", ephemeral: true });
+        } else {
+          await interaction.reply({ content: "Failed to reload embed. Please try again or use `/startorg`.", ephemeral: true });
+        }
+      } catch (e) {
+        // ignore
+      }
     }
   }
 
