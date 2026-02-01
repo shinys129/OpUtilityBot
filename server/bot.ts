@@ -62,11 +62,15 @@ export async function startBot() {
 }
 
 async function registerSlashCommands() {
-  // In a real production app, commands should be registered via the REST API / deploy script.
   if (client?.application) {
      await client.application.commands.create({
        name: 'startorg',
        description: 'Start the org process and show category buttons.',
+     });
+
+     await client.application.commands.create({
+       name: 'refreshorg',
+       description: 'Refresh the org embed without losing any data.',
      });
 
      await client.application.commands.create({
@@ -117,53 +121,154 @@ async function registerSlashCommands() {
   }
 }
 
-// All the rest of your code is 100% unchanged:
+// Helper function to build category buttons with locking (disable if claimed by someone else)
+async function buildCategoryButtons(reservations: any[]): Promise<ActionRowBuilder<ButtonBuilder>[]> {
+  const claimedCategories = new Map<string, string>();
+  for (const r of reservations) {
+    claimedCategories.set(r.category.toLowerCase().replace(/\s+/g, ''), r.user.username);
+  }
+
+  const isLocked = (catKey: string) => claimedCategories.has(catKey.toLowerCase());
+  const getLabel = (catKey: string, baseName: string, range: string) => {
+    const owner = claimedCategories.get(catKey.toLowerCase());
+    return owner ? `${baseName} (${range}) - ${owner}` : `${baseName} (${range})`;
+  };
+
+  const row1 = new ActionRowBuilder<ButtonBuilder>()
+    .addComponents(
+      new ButtonBuilder()
+        .setCustomId('cat_rares')
+        .setLabel(getLabel('rares', 'Rares', '1-23'))
+        .setStyle(isLocked('rares') ? ButtonStyle.Secondary : ButtonStyle.Primary)
+        .setDisabled(isLocked('rares')),
+      new ButtonBuilder()
+        .setCustomId('cat_regionals')
+        .setLabel(getLabel('regionals', 'Regionals', '24-43'))
+        .setStyle(isLocked('regionals') ? ButtonStyle.Secondary : ButtonStyle.Primary)
+        .setDisabled(isLocked('regionals')),
+      new ButtonBuilder()
+        .setCustomId('cat_gmax')
+        .setLabel(getLabel('gmax', 'Gmax', '44-59'))
+        .setStyle(isLocked('gmax') ? ButtonStyle.Secondary : ButtonStyle.Primary)
+        .setDisabled(isLocked('gmax')),
+      new ButtonBuilder()
+        .setCustomId('cat_eevos')
+        .setLabel(getLabel('eevos', 'Eevos', '60-67'))
+        .setStyle(isLocked('eevos') ? ButtonStyle.Secondary : ButtonStyle.Primary)
+        .setDisabled(isLocked('eevos')),
+    );
+
+  const row2 = new ActionRowBuilder<ButtonBuilder>()
+    .addComponents(
+      new ButtonBuilder()
+        .setCustomId('cat_choice1')
+        .setLabel(getLabel('choice1', 'Choice 1', '68-74'))
+        .setStyle(isLocked('choice1') ? ButtonStyle.Secondary : ButtonStyle.Secondary)
+        .setDisabled(isLocked('choice1')),
+      new ButtonBuilder()
+        .setCustomId('cat_choice2')
+        .setLabel(getLabel('choice2', 'Choice 2', '75-81'))
+        .setStyle(isLocked('choice2') ? ButtonStyle.Secondary : ButtonStyle.Secondary)
+        .setDisabled(isLocked('choice2')),
+      new ButtonBuilder()
+        .setCustomId('cat_missingno')
+        .setLabel(getLabel('missingno', 'MissingNo', '82-88'))
+        .setStyle(isLocked('missingno') ? ButtonStyle.Secondary : ButtonStyle.Secondary)
+        .setDisabled(isLocked('missingno')),
+    );
+
+  const row3 = new ActionRowBuilder<ButtonBuilder>()
+    .addComponents(
+      new ButtonBuilder()
+        .setCustomId('cat_res1')
+        .setLabel(getLabel('reserve1', 'Reserve 1', '89-92'))
+        .setStyle(isLocked('reserve1') ? ButtonStyle.Secondary : ButtonStyle.Success)
+        .setDisabled(isLocked('reserve1')),
+      new ButtonBuilder()
+        .setCustomId('cat_res2')
+        .setLabel(getLabel('reserve2', 'Reserve 2', '93-96'))
+        .setStyle(isLocked('reserve2') ? ButtonStyle.Secondary : ButtonStyle.Success)
+        .setDisabled(isLocked('reserve2')),
+      new ButtonBuilder()
+        .setCustomId('cat_res3')
+        .setLabel(getLabel('reserve3', 'Reserve 3', '97-100'))
+        .setStyle(isLocked('reserve3') ? ButtonStyle.Secondary : ButtonStyle.Success)
+        .setDisabled(isLocked('reserve3')),
+    );
+
+  const adminRow = new ActionRowBuilder<ButtonBuilder>()
+    .addComponents(
+      new ButtonBuilder().setCustomId('admin_manage').setLabel('🔧 Manage Reservations').setStyle(ButtonStyle.Danger),
+    );
+
+  return [row1, row2, row3, adminRow];
+}
+
 async function updateOrgEmbed(channel: TextChannel, messageId: string) {
   const reservations = await storage.getReservations();
   const checks = await storage.getChannelChecks();
 
+  const totalReservations = reservations.length;
+  const totalCategories = Object.keys(CATEGORIES).length;
+  const filledCategories = new Set(reservations.map(r => r.category)).size;
+
   const embed = new EmbedBuilder()
-    .setTitle('Pokemon Reservation Status')
-    .setDescription('Current reservations and progress. Use buttons below to join.')
-    .setColor(0x00AE86)
+    .setTitle('⚡ Pokemon Reservation Hub')
+    .setDescription(
+      `**Organization Status**\n` +
+      `━━━━━━━━━━━━━━━━━━━━━━\n` +
+      `📊 **${filledCategories}/${totalCategories}** categories filled\n` +
+      `👥 **${totalReservations}** active reservations\n` +
+      `━━━━━━━━━━━━━━━━━━━━━━\n\n` +
+      `Click a category button below to claim it.\nUse \`/cancelres\` to release your slot.`
+    )
+    .setColor(0x5865F2)
+    .setThumbnail('https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/items/master-ball.png')
+    .setFooter({ text: 'Use /refreshorg to update • /endorg to close' })
     .setTimestamp();
 
-  // Create formatted list for each category
   for (const [key, cat] of Object.entries(CATEGORIES)) {
     const catReservations = reservations.filter(r => r.category === cat.name);
-    // channel checks that are "registered" for this category
     const catChecks = checks.filter(c => c.category === cat.name);
 
     const total = catChecks.length;
     const completed = catChecks.filter(c => c.isComplete).length;
 
-    // Category is done only when there are registered channels AND all are complete
     const isDone = total > 0 && completed === total;
-    const statusEmoji = isDone ? '🟢' : '🔴';
+    const isClaimed = catReservations.length > 0;
+    
+    let statusEmoji = '⬜';
+    if (isDone) statusEmoji = '✅';
+    else if (isClaimed) statusEmoji = '🟡';
 
-    let fieldValue = catReservations.length > 0
-      ? catReservations.map(r => {
-          const parts = [`**${r.user.username}**`];
-          if (r.subCategory) parts.push(`(${r.subCategory})`);
-          const pokemon = [r.pokemon1, r.pokemon2, r.additionalPokemon].filter(Boolean);
-          if (pokemon.length > 0) parts.push(`: ${pokemon.join(', ')}`);
-          return parts.join(' ');
-        }).join('\n')
-      : '*No reservations yet*';
+    let fieldValue: string;
+    if (catReservations.length > 0) {
+      fieldValue = catReservations.map(r => {
+        const parts = [`┃ 👤 **${r.user.username}**`];
+        if (r.subCategory) parts.push(`\`${r.subCategory}\``);
+        const pokemon = [r.pokemon1, r.pokemon2, r.additionalPokemon].filter(Boolean);
+        if (pokemon.length > 0) {
+          parts.push(`\n┃ 🎯 ${pokemon.join(' • ')}`);
+        }
+        return parts.join(' ');
+      }).join('\n');
+    } else {
+      fieldValue = '┃ *Available - click button to claim*';
+    }
 
-    // Append progress if we have registered channels
-    const progressText = total > 0 ? ` — ${completed}/${total} channels` : '';
+    const progressBar = total > 0 ? ` [${completed}/${total}]` : '';
 
     embed.addFields({
-      name: `${statusEmoji} ${cat.name} (${cat.range})${progressText}`,
+      name: `${statusEmoji} ${cat.name} (${cat.range})${progressBar}`,
       value: fieldValue,
-      inline: false
+      inline: true
     });
   }
 
   try {
     const message = await channel.messages.fetch(messageId);
-    await message.edit({ embeds: [embed] });
+    const buttons = await buildCategoryButtons(reservations);
+    await message.edit({ embeds: [embed], components: buttons });
   } catch (error) {
     console.error("Failed to update embed:", error);
   }
@@ -171,47 +276,45 @@ async function updateOrgEmbed(channel: TextChannel, messageId: string) {
 
 async function handleSlashCommand(interaction: any) {
   if (interaction.commandName === 'startorg') {
+    const reservations = await storage.getReservations();
+    const buttons = await buildCategoryButtons(reservations);
+
     const embed = new EmbedBuilder()
-      .setTitle('Pokemon Reservation Status')
+      .setTitle('⚡ Pokemon Reservation Hub')
       .setDescription('Loading status...')
-      .setColor(0x00AE86);
+      .setColor(0x5865F2);
 
-    // Row 1
-    const row1 = new ActionRowBuilder<ButtonBuilder>()
-      .addComponents(
-        new ButtonBuilder().setCustomId('cat_rares').setLabel('Rares (1-23)').setStyle(ButtonStyle.Primary),
-        new ButtonBuilder().setCustomId('cat_regionals').setLabel('Regionals (24-43)').setStyle(ButtonStyle.Primary),
-        new ButtonBuilder().setCustomId('cat_gmax').setLabel('Gmax (44-59)').setStyle(ButtonStyle.Primary),
-        new ButtonBuilder().setCustomId('cat_eevos').setLabel('Eevos (60-67)').setStyle(ButtonStyle.Primary),
-      );
+    const message = await interaction.reply({ embeds: [embed], components: buttons, fetchReply: true });
 
-    // Row 2
-    const row2 = new ActionRowBuilder<ButtonBuilder>()
-      .addComponents(
-        new ButtonBuilder().setCustomId('cat_choice1').setLabel('Choice 1 (68-74)').setStyle(ButtonStyle.Secondary),
-        new ButtonBuilder().setCustomId('cat_choice2').setLabel('Choice 2 (75-81)').setStyle(ButtonStyle.Secondary),
-        new ButtonBuilder().setCustomId('cat_missingno').setLabel('MissingNo (82-88)').setStyle(ButtonStyle.Secondary),
-      );
-
-    // Row 3
-    const row3 = new ActionRowBuilder<ButtonBuilder>()
-      .addComponents(
-        new ButtonBuilder().setCustomId('cat_res1').setLabel('Reserve 1 (89-92)').setStyle(ButtonStyle.Success),
-        new ButtonBuilder().setCustomId('cat_res2').setLabel('Reserve 2 (93-96)').setStyle(ButtonStyle.Success),
-        new ButtonBuilder().setCustomId('cat_res3').setLabel('Reserve 3 (97-100)').setStyle(ButtonStyle.Success),
-      );
-
-    // Admin row: Manage Reservations (visible to anyone, action enforces permissions)
-    const adminRow = new ActionRowBuilder<ButtonBuilder>()
-      .addComponents(
-        new ButtonBuilder().setCustomId('admin_manage').setLabel('Manage Reservations').setStyle(ButtonStyle.Danger),
-      );
-
-    const message = await interaction.reply({ embeds: [embed], components: [row1, row2, row3, adminRow], fetchReply: true });
-
-    // Initial update to show real data
     if (interaction.channel instanceof TextChannel) {
       await updateOrgEmbed(interaction.channel, message.id);
+    }
+  }
+
+  if (interaction.commandName === 'refreshorg') {
+    if (!(interaction.channel instanceof TextChannel)) {
+      await interaction.reply({ content: "This command only works in text channels.", ephemeral: true });
+      return;
+    }
+
+    try {
+      const messages = await interaction.channel.messages.fetch({ limit: 50 });
+      const orgMessage = messages.find((m: any) => 
+        m.author.id === client?.user?.id && 
+        m.embeds.length > 0 && 
+        m.embeds[0].title && 
+        (m.embeds[0].title.includes('Pokemon Reservation') || m.embeds[0].title.includes('Reservation Hub'))
+      );
+
+      if (orgMessage) {
+        await updateOrgEmbed(interaction.channel, orgMessage.id);
+        await interaction.reply({ content: "✅ Embed refreshed successfully! All data preserved.", ephemeral: true });
+      } else {
+        await interaction.reply({ content: "No active org embed found. Use /startorg to create one.", ephemeral: true });
+      }
+    } catch (error) {
+      console.error("Failed to refresh embed:", error);
+      await interaction.reply({ content: "Failed to refresh embed. Please try again.", ephemeral: true });
     }
   }
 
@@ -559,6 +662,19 @@ async function handleButton(interaction: any) {
     const categoryKey = customId.replace('cat_', '').toUpperCase();
     const categoryName = CATEGORIES[categoryKey as keyof typeof CATEGORIES]?.name || categoryKey;
     const range = CATEGORIES[categoryKey as keyof typeof CATEGORIES]?.range || '';
+
+    // Check if category is already claimed by someone else
+    const existingReservations = await storage.getReservations();
+    const existingClaim = existingReservations.find(r => r.category === categoryName);
+    
+    if (existingClaim) {
+      if (existingClaim.user.discordId === userId) {
+        await interaction.reply({ content: `You already have a reservation for ${categoryName}. Use /cancelres to release it first.`, ephemeral: true });
+      } else {
+        await interaction.reply({ content: `${categoryName} is already claimed by ${existingClaim.user.username}. They must use /cancelres first.`, ephemeral: true });
+      }
+      return;
+    }
 
     // Create a new reservation
     await storage.createReservation({
