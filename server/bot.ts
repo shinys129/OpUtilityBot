@@ -124,6 +124,16 @@ async function registerSlashCommands() {
          },
        ],
      });
+
+     await client.application.commands.create({
+       name: 'lock',
+       description: 'Lock the current channel (revoke send messages permission from @everyone).',
+     });
+
+     await client.application.commands.create({
+       name: 'unlock',
+       description: 'Unlock the current channel (restore send messages permission for @everyone).',
+     });
   }
 }
 
@@ -728,6 +738,86 @@ async function handleSlashCommand(interaction: any) {
     } catch (err) {
       console.error("Failed to show channel mappings:", err);
       await interaction.reply({ content: "Failed to retrieve channel mappings. Try again later.", ephemeral: true });
+    }
+  }
+
+  // /lock - Revoke SEND_MESSAGES permission from @everyone role
+  if (interaction.commandName === 'lock') {
+    // Check if user has ManageChannels permission
+    let hasPermission = false;
+    try {
+      const member = interaction.member;
+      if (member && member.permissions && member.permissions.has && member.permissions.has(PermissionFlagsBits.ManageChannels)) {
+        hasPermission = true;
+      }
+    } catch (e) {
+      console.error("Error checking permissions:", e);
+    }
+
+    if (!hasPermission) {
+      await interaction.reply({ content: "❌ You do not have permission to lock this channel. You need the `Manage Channels` permission.", ephemeral: true });
+      return;
+    }
+
+    // Check if the command is used in a text channel
+    if (!(interaction.channel instanceof TextChannel)) {
+      await interaction.reply({ content: "❌ This command can only be used in text channels.", ephemeral: true });
+      return;
+    }
+
+    try {
+      // Get the @everyone role
+      const everyoneRole = interaction.guild.roles.everyone;
+      
+      // Revoke SEND_MESSAGES permission
+      await interaction.channel.permissionOverwrites.edit(everyoneRole, {
+        SendMessages: false
+      });
+
+      await interaction.reply({ content: "🔒 Channel locked successfully! The @everyone role can no longer send messages in this channel.", ephemeral: true });
+    } catch (err) {
+      console.error("Failed to lock channel:", err);
+      await interaction.reply({ content: "❌ Failed to lock the channel. Please try again or check bot permissions.", ephemeral: true });
+    }
+  }
+
+  // /unlock - Restore SEND_MESSAGES permission for @everyone role
+  if (interaction.commandName === 'unlock') {
+    // Check if user has ManageChannels permission
+    let hasPermission = false;
+    try {
+      const member = interaction.member;
+      if (member && member.permissions && member.permissions.has && member.permissions.has(PermissionFlagsBits.ManageChannels)) {
+        hasPermission = true;
+      }
+    } catch (e) {
+      console.error("Error checking permissions:", e);
+    }
+
+    if (!hasPermission) {
+      await interaction.reply({ content: "❌ You do not have permission to unlock this channel. You need the `Manage Channels` permission.", ephemeral: true });
+      return;
+    }
+
+    // Check if the command is used in a text channel
+    if (!(interaction.channel instanceof TextChannel)) {
+      await interaction.reply({ content: "❌ This command can only be used in text channels.", ephemeral: true });
+      return;
+    }
+
+    try {
+      // Get the @everyone role
+      const everyoneRole = interaction.guild.roles.everyone;
+      
+      // Restore SEND_MESSAGES permission (set to null to use default/inherit)
+      await interaction.channel.permissionOverwrites.edit(everyoneRole, {
+        SendMessages: null
+      });
+
+      await interaction.reply({ content: "🔓 Channel unlocked successfully! The @everyone role can now send messages in this channel.", ephemeral: true });
+    } catch (err) {
+      console.error("Failed to unlock channel:", err);
+      await interaction.reply({ content: "❌ Failed to unlock the channel. Please try again or check bot permissions.", ephemeral: true });
     }
   }
 }
