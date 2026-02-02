@@ -885,11 +885,25 @@ async function handleSlashCommand(interaction: any) {
     try {
       const resumedMessage = "**The Incense has now been resumed!**\n\n:sparkles: Good luck to you all and time to light up the starboard! :gmaxLappy: :sparkles:\n<@&1413910154457645106>";
       
-      await interaction.reply({ content: resumedMessage, ephemeral: false });
+      // Try to mention the role with allowed mentions
+      await interaction.reply({ 
+        content: resumedMessage, 
+        ephemeral: false,
+        allowedMentions: { 
+          roles: ['1413910154457645106'] 
+        }
+      });
       console.log("Incense resumed message sent successfully");
     } catch (err) {
       console.error("Failed to send incense resumed message:", err);
-      await interaction.reply({ content: "❌ Failed to send message. Please try again.", ephemeral: true });
+      // Try without role mention as fallback
+      try {
+        const fallbackMessage = "**The Incense has now been resumed!**\n\n:sparkles: Good luck to you all and time to light up the starboard! :gmaxLappy: :sparkles:\n\n*Role mention failed - please ping the role manually if needed*";
+        await interaction.reply({ content: fallbackMessage, ephemeral: false });
+      } catch (fallbackErr) {
+        console.error("Failed to send fallback message:", fallbackErr);
+        await interaction.reply({ content: "❌ Failed to send message. Please try again.", ephemeral: true });
+      }
     }
   }
 
@@ -898,11 +912,25 @@ async function handleSlashCommand(interaction: any) {
     try {
       const pausedMessage = "**The Incense has now been paused! :heart_hands:**\n\nWe have temproarily Paused! Please take a moment to grab yourself a snack and something to drink before we get started up again!\n\nWe will be resuming shortly keep an eye out for a ping :heart:\n\n<@&1413910154457645106>";
       
-      await interaction.reply({ content: pausedMessage, ephemeral: false });
+      // Try to mention the role with allowed mentions
+      await interaction.reply({ 
+        content: pausedMessage, 
+        ephemeral: false,
+        allowedMentions: { 
+          roles: ['1413910154457645106'] 
+        }
+      });
       console.log("Incense paused message sent successfully");
     } catch (err) {
       console.error("Failed to send incense paused message:", err);
-      await interaction.reply({ content: "❌ Failed to send message. Please try again.", ephemeral: true });
+      // Try without role mention as fallback
+      try {
+        const fallbackMessage = "**The Incense has now been paused! :heart_hands:**\n\nWe have temproarily Paused! Please take a moment to grab yourself a snack and something to drink before we get started up again!\n\nWe will be resuming shortly keep an eye out for a ping :heart:\n\n*Role mention failed - please ping the role manually if needed*";
+        await interaction.reply({ content: fallbackMessage, ephemeral: false });
+      } catch (fallbackErr) {
+        console.error("Failed to send fallback message:", fallbackErr);
+        await interaction.reply({ content: "❌ Failed to send message. Please try again.", ephemeral: true });
+      }
     }
   }
 
