@@ -774,7 +774,7 @@ async function handleSlashCommand(interaction: any) {
         SendMessages: false
       });
 
-      await interaction.reply({ content: "🔒 Channel locked successfully! The @everyone role can no longer send messages in this channel.", ephemeral: true });
+      await interaction.reply({ content: "🔒 **This channel has been locked!**", ephemeral: false });
     } catch (err) {
       console.error("Failed to lock channel:", err);
       await interaction.reply({ content: "❌ Failed to lock the channel. Please try again or check bot permissions.", ephemeral: true });
@@ -814,7 +814,7 @@ async function handleSlashCommand(interaction: any) {
         SendMessages: null
       });
 
-      await interaction.reply({ content: "🔓 Channel unlocked successfully! The @everyone role can now send messages in this channel.", ephemeral: true });
+      await interaction.reply({ content: "🔓 **This channel has been unlocked!**", ephemeral: false });
     } catch (err) {
       console.error("Failed to unlock channel:", err);
       await interaction.reply({ content: "❌ Failed to unlock the channel. Please try again or check bot permissions.", ephemeral: true });
