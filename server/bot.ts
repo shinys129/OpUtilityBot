@@ -165,23 +165,6 @@ async function registerSlashCommands() {
   }
 }
 
-// ... existing code ...
-
-async function handleSlashCommand(interaction: any) {
-  const userId = interaction.user.id;
-  const user = await storage.getOrCreateUser(userId, interaction.user.username);
-
-  if (interaction.commandName === 'setadminrole') {
-    if (!interaction.member?.permissions.has(PermissionFlagsBits.ManageGuild)) {
-      await interaction.reply({ content: "You need 'Manage Server' permissions to use this command.", ephemeral: true });
-      return;
-    }
-    const role = interaction.options.getRole('role');
-    await storage.setAdminRole(role.id);
-    await interaction.reply({ content: `✅ Admin role set to <@&${role.id}>.`, ephemeral: true });
-    return;
-  }
-
 // Helper function to build category buttons with locking (disable if claimed by someone else)
 async function buildCategoryButtons(reservations: any[]): Promise<ActionRowBuilder<ButtonBuilder>[]> {
   const claimedCategories = new Map<string, string[]>();
@@ -417,14 +400,75 @@ async function handleSlashCommand(interaction: any) {
   const user = await storage.getOrCreateUser(userId, interaction.user.username);
 
   if (interaction.commandName === 'startorg') {
-    const reservations = await storage.getReservations();
-      .setColor(0x5865F2);
+    if (!(interaction.channel instanceof TextChannel)) {
+      await interaction.reply({ content: "This command only works in text channels.", ephemeral: true });
+      return;
+    }
 
+    const reservations = await storage.getReservations();
+    const checks = await storage.getChannelChecks();
+    
+    const totalReservations = reservations.length;
+    const totalCategories = Object.keys(CATEGORIES).length;
+    const filledCategories = new Set(reservations.map(r => r.category)).size;
+
+    const embed = new EmbedBuilder()
+      .setTitle('⚡ Pokemon Reservation Hub')
+      .setDescription(
+        `**Organization Status**\n` +
+        `━━━━━━━━━━━━━━━━━━━━━━\n` +
+        `📊 **${filledCategories}/${totalCategories}** categories filled\n` +
+        `👥 **${totalReservations}** active reservations\n` +
+        `━━━━━━━━━━━━━━━━━━━━━━\n\n` +
+        `Click a category button below to claim it.\nUse \`/cancelres\` to release your slot.`
+      )
+      .setColor(0x5865F2)
+      .setThumbnail('https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/items/master-ball.png')
+      .setFooter({ text: 'Use /refreshorg to update • /reloadorg if stuck • /endorg to close' })
+      .setTimestamp();
+
+    for (const [key, cat] of Object.entries(CATEGORIES)) {
+      const catReservations = reservations.filter(r => r.category === cat.name);
+      const catChecks = checks.filter(c => c.category === cat.name);
+
+      const total = catChecks.length;
+      const completed = catChecks.filter(c => c.isComplete).length;
+
+      const isDone = total > 0 && completed === total;
+      const isClaimed = catReservations.length > 0;
+      
+      let statusEmoji = '⬜';
+      if (isDone) statusEmoji = '✅';
+      else if (isClaimed) statusEmoji = '🟡';
+
+      let fieldValue: string;
+      if (catReservations.length > 0) {
+        fieldValue = catReservations.map(r => {
+          const parts = [`┃ 👤 **${r.user.username}**`];
+          if (r.subCategory) parts.push(`\`${r.subCategory}\``);
+          const pokemon = [r.pokemon1, r.pokemon2, r.additionalPokemon].filter(Boolean);
+          if (pokemon.length > 0) {
+            parts.push(`\n┃ 🎯 ${pokemon.join(' • ')}`);
+          }
+          return parts.join(' ');
+        }).join('\n');
+      } else {
+        fieldValue = '┃ *Available - click button to claim*';
+      }
+
+      const progressBar = total > 0 ? ` [${completed}/${total}]` : '';
+
+      embed.addFields({
+        name: `${statusEmoji} ${cat.name} (${cat.range})${progressBar}`,
+        value: fieldValue,
+        inline: true
+      });
+    }
+
+    const buttons = await buildCategoryButtons(reservations);
     const message = await interaction.reply({ embeds: [embed], components: buttons, fetchReply: true });
 
     if (interaction.channel instanceof TextChannel) {
-      await updateOrgEmbed(interaction.channel, message.id);
-      // Save the message ID to database for reliable retrieval
       await storage.setOrgState(interaction.channel.id, message.id);
     }
   }
@@ -1550,5 +1594,5 @@ async function handleMessage(message: Message) {
       await updateOrgEmbed(message.channel, orgMessage.id);
     }
   }
-}
+  }
 }
