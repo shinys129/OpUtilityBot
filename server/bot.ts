@@ -154,35 +154,35 @@ async function registerSlashCommands() {
 
 // Helper function to build category buttons with locking (disable if claimed by someone else)
 async function buildCategoryButtons(reservations: any[]): Promise<ActionRowBuilder<ButtonBuilder>[]> {
-  const claimedCategories = new Map<string, string>();
+  const claimedCategories = new Map<string, string[]>();
   for (const r of reservations) {
-    // Skip Regionals - handled separately
-    if (r.category === 'Regionals') continue;
-    claimedCategories.set(r.category.toLowerCase().replace(/\s+/g, ''), r.user.username);
+    const key = r.category.toLowerCase().replace(/\s+/g, '');
+    const current = claimedCategories.get(key) || [];
+    current.push(r.user.username);
+    claimedCategories.set(key, current);
   }
 
-  // Special handling for Regionals
-  // Only count reservations that have a subCategory set (user has made their choice)
-  const regionalReservations = reservations.filter(r => r.category === 'Regionals' && r.subCategory);
-  // Standard Regional is explicitly set as 'standard' or similar, not null
-  const hasStandardRegional = regionalReservations.some(r => r.subCategory === 'standard' || r.subCategory === 'none');
-  const takenSubcategories = regionalReservations.map(r => r.subCategory?.toLowerCase()).filter(Boolean);
-  const allThreeTaken = takenSubcategories.includes('galarian') && 
-                        takenSubcategories.includes('alolan') && 
-                        takenSubcategories.includes('hisuian');
-  const regionalsLocked = hasStandardRegional || allThreeTaken;
-  
-  // Build label for Regionals showing who has it
-  let regionalsLabel = 'Regionals (24-43)';
-  if (regionalReservations.length > 0) {
-    const names = regionalReservations.map(r => r.user.username).join(', ');
-    regionalsLabel = `Regionals (24-43) - ${names}`;
-  }
+  const isLocked = (catKey: string) => {
+    const owners = claimedCategories.get(catKey.toLowerCase()) || [];
+    if (catKey.toLowerCase() === 'regionals') return owners.length >= 3;
+    if (catKey.toLowerCase().startsWith('reserve')) {
+      // For reserves, it's only locked if there are 2 pokemon reserved
+      const res = reservations.find(r => r.category.toLowerCase().replace(/\s+/g, '') === catKey.toLowerCase());
+      return res && res.pokemon1 && res.pokemon2;
+    }
+    return owners.length >= 1;
+  };
 
-  const isLocked = (catKey: string) => claimedCategories.has(catKey.toLowerCase());
   const getLabel = (catKey: string, baseName: string, range: string) => {
-    const owner = claimedCategories.get(catKey.toLowerCase());
-    return owner ? `${baseName} (${range}) - ${owner}` : `${baseName} (${range})`;
+    const owners = claimedCategories.get(catKey.toLowerCase()) || [];
+    if (owners.length === 0) return `${baseName} (${range})`;
+    if (catKey.toLowerCase() === 'regionals') return `${baseName} (${range}) [${owners.length}/3]`;
+    if (catKey.toLowerCase().startsWith('reserve')) {
+      const res = reservations.find(r => r.category.toLowerCase().replace(/\s+/g, '') === catKey.toLowerCase());
+      if (res && res.pokemon1 && !res.pokemon2) return `${baseName} (${range}) - SPLIT`;
+      return `${baseName} (${range}) - ${owners[0]}`;
+    }
+    return `${baseName} (${range}) - ${owners[0]}`;
   };
 
   const row1 = new ActionRowBuilder<ButtonBuilder>()
@@ -194,9 +194,9 @@ async function buildCategoryButtons(reservations: any[]): Promise<ActionRowBuild
         .setDisabled(isLocked('rares')),
       new ButtonBuilder()
         .setCustomId('cat_regionals')
-        .setLabel(regionalsLabel)
-        .setStyle(regionalsLocked ? ButtonStyle.Secondary : ButtonStyle.Primary)
-        .setDisabled(regionalsLocked),
+        .setLabel(getLabel('regionals', 'Regionals', '24-43'))
+        .setStyle(isLocked('regionals') ? ButtonStyle.Secondary : ButtonStyle.Primary)
+        .setDisabled(isLocked('regionals')),
       new ButtonBuilder()
         .setCustomId('cat_gmax')
         .setLabel(getLabel('gmax', 'Gmax', '44-59'))
@@ -231,17 +231,17 @@ async function buildCategoryButtons(reservations: any[]): Promise<ActionRowBuild
   const row3 = new ActionRowBuilder<ButtonBuilder>()
     .addComponents(
       new ButtonBuilder()
-        .setCustomId('cat_res1')
+        .setCustomId('cat_reserve1')
         .setLabel(getLabel('reserve1', 'Reserve 1', '89-92'))
         .setStyle(isLocked('reserve1') ? ButtonStyle.Secondary : ButtonStyle.Success)
         .setDisabled(isLocked('reserve1')),
       new ButtonBuilder()
-        .setCustomId('cat_res2')
+        .setCustomId('cat_reserve2')
         .setLabel(getLabel('reserve2', 'Reserve 2', '93-96'))
         .setStyle(isLocked('reserve2') ? ButtonStyle.Secondary : ButtonStyle.Success)
         .setDisabled(isLocked('reserve2')),
       new ButtonBuilder()
-        .setCustomId('cat_res3')
+        .setCustomId('cat_reserve3')
         .setLabel(getLabel('reserve3', 'Reserve 3', '97-100'))
         .setStyle(isLocked('reserve3') ? ButtonStyle.Secondary : ButtonStyle.Success)
         .setDisabled(isLocked('reserve3')),
@@ -334,14 +334,19 @@ async function updateOrgEmbed(channel: TextChannel, messageId: string) {
       fieldValue = catReservations.map(r => {
         const parts = [`┃ 👤 **${r.user.username}**`];
         if (r.subCategory) parts.push(`\`${r.subCategory}\``);
+        
+        // Show "Split available" for Reserve categories with only 1 Pokemon
+        const isReserve = cat.name.startsWith('Reserve');
         const pokemon = [r.pokemon1, r.pokemon2, r.additionalPokemon].filter(Boolean);
+        
         if (pokemon.length > 0) {
           parts.push(`\n┃ 🎯 ${pokemon.join(' • ')}`);
-          // Show "Split available" for Reserve categories with only 1 Pokemon
-          if (cat.name.startsWith('Reserve') && r.pokemon1 && !r.pokemon2) {
-            parts.push(`\n┃ 💎 *Split available*`);
-          }
         }
+        
+        if (isReserve && r.pokemon1 && !r.pokemon2) {
+          parts.push(`\n┃ 💎 *Split available*`);
+        }
+        
         return parts.join(' ');
       }).join('\n');
     } else {
