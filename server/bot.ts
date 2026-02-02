@@ -1145,9 +1145,45 @@ async function handleButton(interaction: any) {
       const subRow = new ActionRowBuilder<ButtonBuilder>().addComponents(buttons);
       await interaction.reply({ content: `You selected ${categoryName}. Choose a sub-category:`, components: [subRow], ephemeral: true });
     } else {
-      // For all other categories (including Gmax)
-      const existingClaim = existingReservations.find(r => r.category === categoryName);
+      // For all other categories (including Gmax and Reserves)
+      const categoryReservations = existingReservations.filter(r => r.category === categoryName);
       
+      // Special logic for reserves: allow someone else to claim if split is available
+      if (categoryName.startsWith('Reserve') && categoryReservations.length > 0) {
+        const existing = categoryReservations[0];
+        if (existing.pokemon1 && !existing.pokemon2) {
+          // Person who already has it can't claim again as a new reservation
+          if (existing.user.discordId === userId) {
+            await interaction.reply({ content: `You already have this reservation. Use !res to add your second pokemon.`, ephemeral: true });
+            return;
+          }
+          
+          // Check if someone else already claimed the split
+          if (categoryReservations.length >= 2) {
+             const alreadyClaimedByUser = categoryReservations.find(r => r.user.discordId === userId);
+             if (alreadyClaimedByUser) {
+               await interaction.reply({ content: `You already have a split reservation for ${categoryName}. Use !res to reserve.`, ephemeral: true });
+             } else {
+               await interaction.reply({ content: `${categoryName} is already fully claimed (Split taken).`, ephemeral: true });
+             }
+             return;
+          }
+
+          // Someone else can claim the split
+          await storage.createReservation({
+            userId: user.id,
+            category: categoryName,
+            channelRange: range,
+          });
+          await interaction.reply({ content: `You claimed the split for ${categoryName}. Use !res (Pokemon) to reserve.`, ephemeral: true });
+          if (interaction.channel instanceof TextChannel && interaction.message) {
+            await updateOrgEmbed(interaction.channel, interaction.message.id);
+          }
+          return;
+        }
+      }
+
+      const existingClaim = categoryReservations[0];
       if (existingClaim) {
         if (existingClaim.user.discordId === userId) {
           await interaction.reply({ content: `You already have a reservation for ${categoryName}. Use /cancelres to release it first.`, ephemeral: true });
@@ -1333,64 +1369,70 @@ async function handleMessage(message: Message) {
     return;
   }
 
-// Handle !res command
-if (message.content.startsWith('!res')) {
-  const args = message.content.split(' ').slice(1);
-  const pokemonNames = args.join(' ').trim();
+  // Handle !res command
+  if (message.content.startsWith('!res')) {
+    const args = message.content.split(' ').slice(1);
+    const pokemonNames = args.join(' ').trim();
 
-  if (!pokemonNames) {
-    await message.reply("Please specify at least one Pokemon name. Example: `!res vulpix` or `!res vulpix milcery`");
-    return;
-  }
+    if (!pokemonNames) {
+      await message.reply("Please specify at least one Pokemon name. Example: `!res vulpix` or `!res vulpix milcery`");
+      return;
+    }
 
-  const user = await storage.getUserByDiscordId(message.author.id);
-  if (!user) {
-    await message.reply("Please start by using /startorg and selecting a category.");
-    return;
-  }
+    const user = await storage.getUserByDiscordId(message.author.id);
+    if (!user) {
+      await message.reply("Please start by using /startorg and selecting a category.");
+      return;
+    }
 
-  const reservation = await storage.getReservationByUser(user.id);
-  if (!reservation) {
-    await message.reply("No active reservation found. Use /startorg.");
-    return;
-  }
-
-  // Parse Pokemon names - split by spaces, but allow for multi-word Pokemon names
-  const pokemonArray = pokemonNames.split(' ').filter(p => p.length > 0);
-
-  // For Reserve categories, allow 1 or 2 Pokemon
-  const isReserveCategory = reservation.category.startsWith('Reserve');
-  const maxPokemon = isReserveCategory ? 2 : 1;
-
-  if (pokemonArray.length > maxPokemon) {
-    await message.reply(`You can only reserve up to ${maxPokemon} Pokemon for ${reservation.category}.`);
-    return;
-  }
-
-  // Check if any of the Pokemon are already reserved by someone else
-  try {
+    // Get all user's reservations to find the one we're updating
     const allReservations = await storage.getReservations();
+    const userReservations = allReservations.filter(r => r.userId === user.id);
+    
+    if (userReservations.length === 0) {
+      await message.reply("No active reservation found. Use /startorg.");
+      return;
+    }
 
-    for (const pokemonName of pokemonArray) {
-      const normalized = pokemonName.toLowerCase();
-      const existing = allReservations.find(r => {
-        const candidates = [r.pokemon1, r.pokemon2, r.additionalPokemon].filter(Boolean) as string[];
-        return candidates.some(p => p.trim().toLowerCase() === normalized);
-      });
+    // If user has multiple reservations (e.g. splits or multiple regionals), we need to decide which one to update
+    // For now, we'll pick the one that doesn't have pokemon1 set, or the most recent one.
+    let reservation = userReservations.find(r => !r.pokemon1);
+    if (!reservation) reservation = userReservations[0];
 
-      if (existing) {
-        if (existing.user && existing.user.discordId === message.author.id) {
-          await message.reply(`You have already reserved ${pokemonName}.`);
-          return;
-        } else {
-          await message.reply(`${pokemonName} has already been reserved this round.`);
-          return;
+    // Parse Pokemon names - split by spaces, but allow for multi-word Pokemon names
+    const pokemonArray = pokemonNames.split(' ').filter(p => p.length > 0);
+
+    // For Reserve categories, allow 1 or 2 Pokemon
+    const isReserveCategory = reservation.category.startsWith('Reserve');
+    const maxPokemon = isReserveCategory ? 2 : 1;
+
+    if (pokemonArray.length > maxPokemon) {
+      await message.reply(`You can only reserve up to ${maxPokemon} Pokemon for ${reservation.category}.`);
+      return;
+    }
+
+    // Check if any of the Pokemon are already reserved by someone else
+    try {
+      for (const pokemonName of pokemonArray) {
+        const normalized = pokemonName.toLowerCase();
+        const existing = allReservations.find(r => {
+          const candidates = [r.pokemon1, r.pokemon2, r.additionalPokemon].filter(Boolean) as string[];
+          return candidates.some(p => p.trim().toLowerCase() === normalized);
+        });
+
+        if (existing) {
+          if (existing.userId === user.id) {
+            await message.reply(`You have already reserved ${pokemonName}.`);
+            return;
+          } else {
+            await message.reply(`${pokemonName} has already been reserved this round.`);
+            return;
+          }
         }
       }
+    } catch (err) {
+      console.error("Failed to check existing reservations for duplicates:", err);
     }
-  } catch (err) {
-    console.error("Failed to check existing reservations for duplicates:", err);
-  }
 
   let updated = false;
 
