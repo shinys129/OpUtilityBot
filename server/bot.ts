@@ -177,11 +177,15 @@ async function buildCategoryButtons(reservations: any[]): Promise<ActionRowBuild
 
   const isLocked = (catKey: string) => {
     const owners = claimedCategories.get(catKey.toLowerCase()) || [];
+    console.log(`[isLocked] catKey: ${catKey}, owners: ${JSON.stringify(owners)}`);
     if (catKey.toLowerCase() === 'regionals') return owners.length >= 3;
     if (catKey.toLowerCase().startsWith('reserve')) {
       // For reserves, it's only locked if there are 2 pokemon reserved
       const res = reservations.find(r => r.category.toLowerCase().replace(/\s+/g, '') === catKey.toLowerCase());
-      return res && res.pokemon1 && res.pokemon2;
+      console.log(`[isLocked] Reserve check - found res: ${res ? JSON.stringify({pokemon1: res.pokemon1, pokemon2: res.pokemon2}) : 'null'}`);
+      const locked = !!(res && res.pokemon1 && res.pokemon2);
+      console.log(`[isLocked] Reserve ${catKey} locked: ${locked}`);
+      return locked;
     }
     return owners.length >= 1;
   };
