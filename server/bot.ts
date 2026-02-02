@@ -1260,3 +1260,4 @@ if (message.content.startsWith('!res')) {
     }
   }
 }
+}
