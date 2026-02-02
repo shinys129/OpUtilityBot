@@ -139,6 +139,16 @@ async function registerSlashCommands() {
        name: 'orglock',
        description: 'Send organization message and lock the channel.',
      });
+
+     await client.application.commands.create({
+       name: 'ir',
+       description: 'Send incense resumed message.',
+     });
+
+     await client.application.commands.create({
+       name: 'ip',
+       description: 'Send incense paused message.',
+     });
   }
 }
 
@@ -869,10 +879,38 @@ async function handleSlashCommand(interaction: any) {
       await interaction.reply({ content: "❌ Failed to execute orglock command. Please try again or check bot permissions.", ephemeral: true });
     }
   }
+
+  // /ir - Send incense resumed message
+  if (interaction.commandName === 'ir') {
+    try {
+      const resumedMessage = "**The Incense has now been resumed!**\n\n:sparkles: Good luck to you all and time to light up the starboard! :gmaxLappy: :sparkles:\n<@&1413910154457645106>";
+      
+      await interaction.reply({ content: resumedMessage, ephemeral: false });
+      console.log("Incense resumed message sent successfully");
+    } catch (err) {
+      console.error("Failed to send incense resumed message:", err);
+      await interaction.reply({ content: "❌ Failed to send message. Please try again.", ephemeral: true });
+    }
+  }
+
+  // /ip - Send incense paused message
+  if (interaction.commandName === 'ip') {
+    try {
+      const pausedMessage = "**The Incense has now been paused! :heart_hands:**\n\nWe have temproarily Paused! Please take a moment to grab yourself a snack and something to drink before we get started up again!\n\nWe will be resuming shortly keep an eye out for a ping :heart:\n\n<@&1413910154457645106>";
+      
+      await interaction.reply({ content: pausedMessage, ephemeral: false });
+      console.log("Incense paused message sent successfully");
+    } catch (err) {
+      console.error("Failed to send incense paused message:", err);
+      await interaction.reply({ content: "❌ Failed to send message. Please try again.", ephemeral: true });
+    }
+  }
+
 }
 
 async function handleButton(interaction: any) {
   const customId = interaction.customId;
+  // ... (rest of the code remains the same)
   const userId = interaction.user.id;
   const username = interaction.user.username;
 
