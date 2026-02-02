@@ -1026,7 +1026,7 @@ async function handleSlashCommand(interaction: any) {
 
 async function handleButton(interaction: any) {
   const customId = interaction.customId;
-  // ... (rest of the code remains the same)
+  console.log(`[handleButton] Button clicked: ${customId}`);
   const userId = interaction.user.id;
   const username = interaction.user.username;
 
@@ -1155,8 +1155,11 @@ async function handleButton(interaction: any) {
 
   // Handle Category Selection
   if (customId.startsWith('cat_')) {
+    console.log(`[handleButton] Processing category button: ${customId}`);
     const categoryKey = customId.replace('cat_', '').toUpperCase();
+    console.log(`[handleButton] categoryKey: ${categoryKey}`);
     const categoryName = CATEGORIES[categoryKey as keyof typeof CATEGORIES]?.name || categoryKey;
+    console.log(`[handleButton] categoryName: ${categoryName}`);
     const range = CATEGORIES[categoryKey as keyof typeof CATEGORIES]?.range || '';
 
     // Check if category is already claimed by someone else
