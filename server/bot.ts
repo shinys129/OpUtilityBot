@@ -191,8 +191,20 @@ async function buildCategoryButtons(reservations: any[]): Promise<ActionRowBuild
     if (owners.length === 0) return `${baseName} (${range})`;
     if (catKey.toLowerCase() === 'regionals') return `${baseName} (${range}) [${owners.length}/3]`;
     if (catKey.toLowerCase().startsWith('reserve')) {
-      const res = reservations.find(r => r.category.toLowerCase().replace(/\s+/g, '') === catKey.toLowerCase());
-      if (res && res.pokemon1 && !res.pokemon2) return `${baseName} (${range}) - SPLIT`;
+      const categoryReservations = reservations.filter(r => r.category.toLowerCase().replace(/\s+/g, '') === catKey.toLowerCase());
+      // If 2 people have claimed (split taken)
+      if (categoryReservations.length >= 2) {
+        return `${baseName} (${range}) - SPLIT TAKEN`;
+      }
+      // If 1 person has claimed with only 1 pokemon (split available)
+      const res = categoryReservations[0];
+      if (res && res.pokemon1 && !res.pokemon2) {
+        return `${baseName} (${range}) - SPLIT`;
+      }
+      // If 1 person has claimed with both pokemon (fully claimed)
+      if (res && res.pokemon1 && res.pokemon2) {
+        return `${baseName} (${range}) - ${owners[0]}`;
+      }
       return `${baseName} (${range}) - ${owners[0]}`;
     }
     return `${baseName} (${range}) - ${owners[0]}`;
