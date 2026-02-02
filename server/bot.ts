@@ -134,6 +134,11 @@ async function registerSlashCommands() {
        name: 'unlock',
        description: 'Unlock the current channel (restore send messages permission for @everyone).',
      });
+
+     await client.application.commands.create({
+       name: 'orglock',
+       description: 'Send organization message and lock the channel.',
+     });
   }
 }
 
@@ -775,6 +780,7 @@ async function handleSlashCommand(interaction: any) {
       });
 
       await interaction.reply({ content: "🔒 **This channel has been locked!**", ephemeral: false });
+      await interaction.channel.send("This channel is now locked. Please refrain from sending messages until it is unlocked.");
     } catch (err) {
       console.error("Failed to lock channel:", err);
       await interaction.reply({ content: "❌ Failed to lock the channel. Please try again or check bot permissions.", ephemeral: true });
@@ -818,6 +824,49 @@ async function handleSlashCommand(interaction: any) {
     } catch (err) {
       console.error("Failed to unlock channel:", err);
       await interaction.reply({ content: "❌ Failed to unlock the channel. Please try again or check bot permissions.", ephemeral: true });
+    }
+  }
+
+  // /orglock - Send organization message and lock the channel
+  if (interaction.commandName === 'orglock') {
+    // Check if user has ManageChannels permission
+    let hasPermission = false;
+    try {
+      const member = interaction.member;
+      if (member && member.permissions && member.permissions.has && member.permissions.has(PermissionFlagsBits.ManageChannels)) {
+        hasPermission = true;
+      }
+    } catch (e) {
+      console.error("Error checking permissions:", e);
+    }
+
+    if (!hasPermission) {
+      await interaction.reply({ content: "❌ You do not have permission to use orglock. You need the `Manage Channels` permission.", ephemeral: true });
+      return;
+    }
+
+    // Check if the command is used in a text channel
+    if (!(interaction.channel instanceof TextChannel)) {
+      await interaction.reply({ content: "❌ This command can only be used in text channels.", ephemeral: true });
+      return;
+    }
+
+    try {
+      // Send the organization message first
+      const orgMessage = "**A ROUND IS CURRENTLY BEING ORGANIZED.** Please take unnecessary chatter to <#1405221498037469335> and run commands in <#1405195433378054175> . THANK YOU!\n\nThis channel has been momentarily locked so that the organiser may catch up on the reserves thank you for your patience!";
+      
+      await interaction.reply({ content: orgMessage, ephemeral: false });
+
+      // Then lock the channel
+      const everyoneRole = interaction.guild.roles.everyone;
+      await interaction.channel.permissionOverwrites.edit(everyoneRole, {
+        SendMessages: false
+      });
+
+      console.log("Channel locked successfully with orglock command");
+    } catch (err) {
+      console.error("Failed to execute orglock command:", err);
+      await interaction.reply({ content: "❌ Failed to execute orglock command. Please try again or check bot permissions.", ephemeral: true });
     }
   }
 }
