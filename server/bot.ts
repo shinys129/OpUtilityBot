@@ -149,8 +149,38 @@ async function registerSlashCommands() {
        name: 'ip',
        description: 'Send incense paused message.',
      });
+
+     await client.application.commands.create({
+       name: 'setadminrole',
+       description: 'Set a role that has permission to use org commands (admin only).',
+       options: [
+         {
+           name: 'role',
+           description: 'The role to allow.',
+           type: 8, // ROLE
+           required: true,
+         },
+       ],
+     });
   }
 }
+
+// ... existing code ...
+
+async function handleSlashCommand(interaction: any) {
+  const userId = interaction.user.id;
+  const user = await storage.getOrCreateUser(userId, interaction.user.username);
+
+  if (interaction.commandName === 'setadminrole') {
+    if (!interaction.member?.permissions.has(PermissionFlagsBits.ManageGuild)) {
+      await interaction.reply({ content: "You need 'Manage Server' permissions to use this command.", ephemeral: true });
+      return;
+    }
+    const role = interaction.options.getRole('role');
+    await storage.setAdminRole(role.id);
+    await interaction.reply({ content: `✅ Admin role set to <@&${role.id}>.`, ephemeral: true });
+    return;
+  }
 
 // Helper function to build category buttons with locking (disable if claimed by someone else)
 async function buildCategoryButtons(reservations: any[]): Promise<ActionRowBuilder<ButtonBuilder>[]> {
@@ -372,13 +402,22 @@ async function updateOrgEmbed(channel: TextChannel, messageId: string) {
 }
 
 async function handleSlashCommand(interaction: any) {
+  if (interaction.commandName === 'setadminrole') {
+    if (!interaction.member?.permissions.has(PermissionFlagsBits.ManageGuild)) {
+      await interaction.reply({ content: "You need 'Manage Server' permissions to use this command.", ephemeral: true });
+      return;
+    }
+    const role = interaction.options.getRole('role');
+    await storage.setAdminRole(role.id);
+    await interaction.reply({ content: `✅ Admin role set to <@&${role.id}>.`, ephemeral: true });
+    return;
+  }
+
+  const userId = interaction.user.id;
+  const user = await storage.getOrCreateUser(userId, interaction.user.username);
+
   if (interaction.commandName === 'startorg') {
     const reservations = await storage.getReservations();
-    const buttons = await buildCategoryButtons(reservations);
-
-    const embed = new EmbedBuilder()
-      .setTitle('⚡ Pokemon Reservation Hub')
-      .setDescription('Loading status...')
       .setColor(0x5865F2);
 
     const message = await interaction.reply({ embeds: [embed], components: buttons, fetchReply: true });
@@ -557,9 +596,9 @@ async function handleSlashCommand(interaction: any) {
   if (interaction.commandName === 'endorg') {
     console.log("[endorg] Command received");
     
-    // Authorization: either ManageGuild permission or role id set in ADMIN_ROLE_ID
+    // Authorization: either ManageGuild permission or role id set in database
     let isAdmin = false;
-    const adminRoleId = process.env.ADMIN_ROLE_ID;
+    const adminRoleId = await storage.getAdminRole();
 
     try {
       const member = interaction.member;
@@ -1024,9 +1063,9 @@ async function handleButton(interaction: any) {
 
   // Admin manage button
   if (customId === 'admin_manage') {
-    // Authorization: either ManageGuild permission or role id set in ADMIN_ROLE_ID
+    // Authorization: either ManageGuild permission or role id set in database
     let isAdmin = false;
-    const adminRoleId = process.env.ADMIN_ROLE_ID;
+    const adminRoleId = await storage.getAdminRole();
 
     try {
       const member = interaction.member;

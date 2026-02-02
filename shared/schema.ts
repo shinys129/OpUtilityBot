@@ -32,6 +32,7 @@ export const orgState = pgTable("org_state", {
   id: serial("id").primaryKey(),
   channelId: text("channel_id").notNull(), // Discord channel ID where the org embed is
   messageId: text("message_id").notNull(), // Discord message ID of the org embed
+  adminRoleId: text("admin_role_id"), // Role ID that can use admin commands
   updatedAt: timestamp("updated_at").defaultNow(),
 });
 

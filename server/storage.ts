@@ -41,9 +41,34 @@ export interface IStorage {
   getOrgState(): Promise<OrgState | undefined>;
   setOrgState(channelId: string, messageId: string): Promise<OrgState>;
   clearOrgState(): Promise<void>;
+
+  // Admin Role operations
+  getAdminRole(): Promise<string | undefined>;
+  setAdminRole(roleId: string): Promise<void>;
 }
 
 export class DatabaseStorage implements IStorage {
+  // ... existing code ...
+
+  async getAdminRole(): Promise<string | undefined> {
+    const [state] = await db.select().from(orgState).limit(1);
+    return state?.adminRoleId ?? undefined;
+  }
+
+  async setAdminRole(roleId: string): Promise<void> {
+    const [existing] = await db.select().from(orgState).limit(1);
+    if (existing) {
+      await db.update(orgState).set({ adminRoleId: roleId }).where(eq(orgState.id, existing.id));
+    } else {
+      await db.insert(orgState).values({ channelId: 'temp', messageId: 'temp', adminRoleId: roleId });
+    }
+  }
+
+  async getOrCreateUser(discordId: string, username: string): Promise<User> {
+    const existing = await this.getUserByDiscordId(discordId);
+    if (existing) return existing;
+    return await this.createUser({ discordId, username });
+  }
   async getUser(id: number): Promise<User | undefined> {
     const [user] = await db.select().from(users).where(eq(users.id, id));
     return user;
