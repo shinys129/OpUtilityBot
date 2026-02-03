@@ -1423,7 +1423,18 @@ async function handleButton(interaction: any) {
       }
       
       if (customId === 'cat_gmax') {
-        await interaction.reply({ content: `You selected ${categoryName}. Use !res (Pokemon) to reserve your Gmax; after you add your pokemon I'll ask which Gigantamax Rare you want (Urshifu / Melmetal / Eternatus).`, ephemeral: true });
+        // Show Gigantamax Rare choice buttons immediately
+        const gmaxRow = new ActionRowBuilder<ButtonBuilder>()
+          .addComponents(
+            new ButtonBuilder().setCustomId('gmax_pick_urshifu').setLabel('Urshifu').setStyle(ButtonStyle.Primary),
+            new ButtonBuilder().setCustomId('gmax_pick_melmetal').setLabel('Melmetal').setStyle(ButtonStyle.Primary),
+            new ButtonBuilder().setCustomId('gmax_pick_eternatus').setLabel('Eternatus').setStyle(ButtonStyle.Primary),
+          );
+        await interaction.reply({ 
+          content: `You selected ${categoryName}. Choose your Gigantamax Rare, then use !res (Pokemon) to reserve your Gmax:`, 
+          components: [gmaxRow], 
+          ephemeral: true 
+        });
       } else {
         await interaction.reply({ content: `You selected ${categoryName}. Use !res (Pokemon) to reserve.`, ephemeral: true });
       }
@@ -1554,52 +1565,6 @@ async function handleMessage(message: Message) {
   }
   // ------- end buy detection -------
 
-  // Handle !gmax quick-choice command (allows typing choice instead of button)
-  if (message.content.toLowerCase().startsWith('!gmax')) {
-    const args = message.content.split(' ').slice(1);
-    const choiceRaw = args.join(' ').trim();
-    if (!choiceRaw) {
-      await message.reply("Please provide your Gigantamax Rare choice (Urshifu, Melmetal, Eternatus). Example: `!gmax Urshifu`");
-      return;
-    }
-    const normalized = choiceRaw.toLowerCase();
-    const map: Record<string, string> = {
-      'urshifu': 'Urshifu',
-      'melmetal': 'Melmetal',
-      'eternatus': 'Eternatus',
-    };
-    // allow full input like "Galarian Articuno" handled elsewhere
-    const matched = Object.keys(map).find(k => normalized.includes(k));
-    if (!matched) {
-      await message.reply("Unknown Gigantamax choice. Valid options: Urshifu, Melmetal, Eternatus.");
-      return;
-    }
-
-    const user = await storage.getUserByDiscordId(message.author.id);
-    if (!user) {
-      await message.reply("Please start by using /startorg and selecting a category.");
-      return;
-    }
-    const reservation = await storage.getReservationByUser(user.id);
-    if (!reservation || reservation.category !== 'Gmax') {
-      await message.reply("No active Gmax reservation found to set this choice.");
-      return;
-    }
-
-    await storage.updateReservation(reservation.id, { additionalPokemon: map[matched] });
-    await message.reply(`Set your Gigantamax Rare choice to ${map[matched]}.`);
-
-    // update embed if present
-    if (message.channel instanceof TextChannel) {
-      const messages = await message.channel.messages.fetch({ limit: 50 });
-      const orgMessage = messages.find((m: DiscordMessage) => m.author.id === client?.user?.id && m.embeds.length > 0 && (m.embeds[0].title?.includes('Pokemon Reservation') || m.embeds[0].title?.includes('Reservation Hub')));
-      if (orgMessage) {
-        await updateOrgEmbed(message.channel, orgMessage.id);
-      }
-    }
-    return;
-  }
-
   // Handle !res command
   if (message.content.startsWith('!res')) {
     const args = message.content.split(' ').slice(1);
@@ -1715,15 +1680,16 @@ async function handleMessage(message: Message) {
     }
   }
 
-  // After adding a pokemon for Gmax, prompt them to pick a Gigantamax Rare via buttons (also instruct them about !gmax)
-  if (updated && reservation && reservation.category === 'Gmax' && message.channel instanceof TextChannel) {
+  // After adding a pokemon for Gmax, prompt them to pick a Gigantamax Rare via buttons (only if not already chosen)
+  const updatedReservation = reservation ? await storage.getReservationByUser(reservation.userId) : null;
+  if (updated && updatedReservation && updatedReservation.category === 'Gmax' && !updatedReservation.additionalPokemon && message.channel instanceof TextChannel) {
     const choicesRow = new ActionRowBuilder<ButtonBuilder>()
       .addComponents(
         new ButtonBuilder().setCustomId('gmax_pick_urshifu').setLabel('Urshifu').setStyle(ButtonStyle.Primary),
         new ButtonBuilder().setCustomId('gmax_pick_melmetal').setLabel('Melmetal').setStyle(ButtonStyle.Primary),
         new ButtonBuilder().setCustomId('gmax_pick_eternatus').setLabel('Eternatus').setStyle(ButtonStyle.Primary),
       );
-    await message.reply({ content: 'Choose your Gigantamax Rare (or type `!gmax <name>`):', components: [choicesRow] });
+    await message.reply({ content: 'Choose your Gigantamax Rare:', components: [choicesRow] });
 
     // update org embed as well
     const messages = await message.channel.messages.fetch({ limit: 50 });
