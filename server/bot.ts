@@ -1015,9 +1015,9 @@ async function handleSlashCommand(interaction: any) {
       // Get the @everyone role
       const everyoneRole = interaction.guild.roles.everyone;
       
-      // Restore SEND_MESSAGES permission (set to null to use default/inherit)
+      // Allow SEND_MESSAGES permission for @everyone
       await interaction.channel.permissionOverwrites.edit(everyoneRole, {
-        SendMessages: null
+        SendMessages: true
       });
       
       // Remove the exempt role override (no longer needed when unlocked)
