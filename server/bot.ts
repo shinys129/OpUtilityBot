@@ -189,8 +189,9 @@ async function buildCategoryButtons(reservations: any[]): Promise<ActionRowBuild
       return owners.length >= 1;
     }
     if (catKey.toLowerCase() === 'booster') {
-      const res = reservations.find(r => r.category === 'Server Booster Reserves');
-      return !!(res && res.pokemon1 && res.pokemon2);
+      // Server Booster allows 2 people with 1 Pokemon each
+      const categoryReservations = reservations.filter(r => r.category === 'Server Booster Reserves');
+      return categoryReservations.length >= 2;
     }
     return owners.length >= 1;
   };
@@ -200,9 +201,14 @@ async function buildCategoryButtons(reservations: any[]): Promise<ActionRowBuild
 
     if (catKey.toLowerCase() === 'booster') {
       const categoryReservations = reservations.filter(r => r.category === 'Server Booster Reserves');
-      const res = categoryReservations[0];
-      if (res && res.pokemon1 && !res.pokemon2) return `${baseName} - SPLIT`;
-      if (res && res.pokemon1 && res.pokemon2) return `${baseName} - ${owners[0]}`;
+      // If 2 people have claimed (split taken)
+      if (categoryReservations.length >= 2) {
+        return `${baseName} - SPLIT TAKEN`;
+      }
+      // If 1 person has claimed (split available)
+      if (categoryReservations.length === 1) {
+        return `${baseName} - SPLIT`;
+      }
       return baseName;
     }
 
@@ -387,20 +393,24 @@ async function updateOrgEmbed(channel: TextChannel, messageId: string) {
         const parts = [`┃ 👤 **${r.user.username}**`];
         if (r.subCategory) parts.push(`\`${r.subCategory}\``);
         
-    const isReserve = cat.name.startsWith('Reserve');
-    const pokemon = [r.pokemon1, r.pokemon2, r.additionalPokemon].filter(Boolean);
-    
-    if (pokemon.length > 0) {
-      parts.push(`\n┃ 🎯 ${pokemon.join(' • ')}`);
-    }
-    
-    // Only show split available for Reserve categories (not MissingNo)
-    if (isReserve && r.pokemon1 && !r.pokemon2) {
-      parts.push(`\n┃ 💎 *Split available*`);
-    }
+        const isReserve = cat.name.startsWith('Reserve');
+        const pokemon = [r.pokemon1, r.pokemon2, r.additionalPokemon].filter(Boolean);
+        
+        if (pokemon.length > 0) {
+          parts.push(`\n┃ 🎯 ${pokemon.join(' • ')}`);
+        }
+        
+        // Only show split available for Reserve categories (not MissingNo)
+        if (isReserve && r.pokemon1 && !r.pokemon2) {
+          parts.push(`\n┃ 💎 *Split available*`);
+        }
         
         return parts.join(' ');
       }).join('\n');
+      // Show split available for Server Booster Reserves if only 1 person has claimed
+      if (cat.name === 'Server Booster Reserves' && catReservations.length === 1) {
+        fieldValue += `\n┃ 💎 *Split available for boosters*`;
+      }
     } else {
       fieldValue = '┃ *Available - click button to claim*';
     }
@@ -491,6 +501,10 @@ async function handleSlashCommand(interaction: any) {
           }
           return parts.join(' ');
         }).join('\n');
+        // Show split available for Server Booster Reserves if only 1 person has claimed
+        if (cat.name === 'Server Booster Reserves' && catReservations.length === 1) {
+          fieldValue += `\n┃ 💎 *Split available for boosters*`;
+        }
       } else {
         fieldValue = '┃ *Available - click button to claim*';
       }
@@ -600,6 +614,10 @@ async function handleSlashCommand(interaction: any) {
             }
             return parts.join(' ');
           }).join('\n');
+          // Show split available for Server Booster Reserves if only 1 person has claimed
+          if (cat.name === 'Server Booster Reserves' && catReservations.length === 1) {
+            fieldValue += `\n┃ 💎 *Split available for boosters*`;
+          }
         } else {
           fieldValue = '┃ *Available - click button to claim*';
         }
@@ -1294,6 +1312,52 @@ async function handleButton(interaction: any) {
       // For all other categories (including Gmax and Reserves)
       const categoryReservations = existingReservations.filter(r => r.category === categoryName);
       
+      // Special logic for Server Booster Reserves: require booster role, allow 2 people with 1 Pokemon each
+      if (categoryName === 'Server Booster Reserves') {
+        const BOOSTER_ROLE_ID = '1405333965933383772';
+        const member = await interaction.guild?.members.fetch(userId);
+        if (!member?.roles.cache.has(BOOSTER_ROLE_ID)) {
+          await interaction.reply({ content: `You must have the Server Booster role to claim this category.`, ephemeral: true });
+          return;
+        }
+        
+        // Check if already claimed by 2 people
+        if (categoryReservations.length >= 2) {
+          const alreadyClaimedByUser = categoryReservations.find(r => r.user.discordId === userId);
+          if (alreadyClaimedByUser) {
+            await interaction.reply({ content: `You already have a Server Booster reservation. Use !res to reserve your Pokemon.`, ephemeral: true });
+          } else {
+            await interaction.reply({ content: `Server Booster Reserves is already fully claimed (Split taken).`, ephemeral: true });
+          }
+          return;
+        }
+        
+        // Check if user already has a reservation
+        const userReservation = categoryReservations.find(r => r.user.discordId === userId);
+        if (userReservation) {
+          await interaction.reply({ content: `You already have a Server Booster reservation. Use !res to reserve your Pokemon.`, ephemeral: true });
+          return;
+        }
+        
+        // Create reservation (1 Pokemon allowed per person)
+        await storage.createReservation({
+          userId: user.id,
+          category: categoryName,
+          channelRange: range,
+        });
+        
+        if (categoryReservations.length === 0) {
+          await interaction.reply({ content: `You claimed Server Booster Reserves. Use !res (Pokemon) to reserve your Pokemon. One more booster can also claim this category.`, ephemeral: true });
+        } else {
+          await interaction.reply({ content: `You claimed the split for Server Booster Reserves. Use !res (Pokemon) to reserve your Pokemon.`, ephemeral: true });
+        }
+        
+        if (interaction.channel instanceof TextChannel && interaction.message) {
+          await updateOrgEmbed(interaction.channel, interaction.message.id);
+        }
+        return;
+      }
+      
       // Special logic for reserves: allow someone else to claim if split is available
       if (categoryName.startsWith('Reserve') && categoryReservations.length > 0) {
         const existing = categoryReservations[0];
@@ -1368,6 +1432,15 @@ async function handleButton(interaction: any) {
     // Update the main embed
     if (interaction.channel instanceof TextChannel && interaction.message) {
       await updateOrgEmbed(interaction.channel, interaction.message.id);
+      
+      // Check if all non-booster categories are filled and send announcement
+      const allReservations = await storage.getReservations();
+      const totalCategories = Object.keys(CATEGORIES).filter(k => k !== 'BOOSTER').length;
+      const filledCategories = new Set(allReservations.filter(r => r.category !== 'Server Booster Reserves').map(r => r.category)).size;
+      
+      if (filledCategories === totalCategories) {
+        await interaction.channel.send(`Thank you <@&1468236218331562024> all slots have been filled and you can start buying your channels!`);
+      }
     }
     return;
   }
