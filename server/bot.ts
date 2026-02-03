@@ -928,11 +928,13 @@ async function handleSlashCommand(interaction: any) {
 
   // /lock - Revoke SEND_MESSAGES permission from @everyone role
   if (interaction.commandName === 'lock') {
-    // Check if user has ManageChannels permission
+    // Check if user has ManageChannels permission or the exempt role
     let hasPermission = false;
     try {
       const member = interaction.member;
-      if (member && member.permissions && member.permissions.has && member.permissions.has(PermissionFlagsBits.ManageChannels)) {
+      if (member && member.roles && member.roles.cache.has('1402994392608018553')) {
+        hasPermission = true;
+      } else if (member && member.permissions && member.permissions.has && member.permissions.has(PermissionFlagsBits.ManageChannels)) {
         hasPermission = true;
       }
     } catch (e) {
@@ -940,7 +942,7 @@ async function handleSlashCommand(interaction: any) {
     }
 
     if (!hasPermission) {
-      await interaction.reply({ content: "❌ You do not have permission to lock this channel. You need the `Manage Channels` permission.", ephemeral: true });
+      await interaction.reply({ content: "❌ You do not have permission to lock this channel. You need the `Manage Channels` permission or the exempt role.", ephemeral: true });
       return;
     }
 
@@ -969,11 +971,13 @@ async function handleSlashCommand(interaction: any) {
 
   // /unlock - Restore SEND_MESSAGES permission for @everyone role
   if (interaction.commandName === 'unlock') {
-    // Check if user has ManageChannels permission
+    // Check if user has ManageChannels permission or the exempt role
     let hasPermission = false;
     try {
       const member = interaction.member;
-      if (member && member.permissions && member.permissions.has && member.permissions.has(PermissionFlagsBits.ManageChannels)) {
+      if (member && member.roles && member.roles.cache.has('1402994392608018553')) {
+        hasPermission = true;
+      } else if (member && member.permissions && member.permissions.has && member.permissions.has(PermissionFlagsBits.ManageChannels)) {
         hasPermission = true;
       }
     } catch (e) {
@@ -981,7 +985,7 @@ async function handleSlashCommand(interaction: any) {
     }
 
     if (!hasPermission) {
-      await interaction.reply({ content: "❌ You do not have permission to unlock this channel. You need the `Manage Channels` permission.", ephemeral: true });
+      await interaction.reply({ content: "❌ You do not have permission to unlock this channel. You need the `Manage Channels` permission or the exempt role.", ephemeral: true });
       return;
     }
 
