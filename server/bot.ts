@@ -1318,6 +1318,18 @@ async function handleButton(interaction: any) {
         category: categoryName,
         channelRange: range,
       });
+
+      // Assign temporary role
+      const roleId = "1468236218331562024";
+      try {
+        const member = await interaction.guild?.members.fetch(userId);
+        if (member && !member.roles.cache.has(roleId)) {
+          await member.roles.add(roleId);
+          console.log(`Assigned temporary role to ${username}`);
+        }
+      } catch (error) {
+        console.error(`Failed to assign role to ${username}:`, error);
+      }
       
       if (customId === 'cat_gmax') {
         await interaction.reply({ content: `You selected ${categoryName}. Use !res (Pokemon) to reserve your Gmax; after you add your pokemon I'll ask which Gigantamax Rare you want (Urshifu / Melmetal / Eternatus).`, ephemeral: true });
