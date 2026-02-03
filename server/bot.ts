@@ -926,13 +926,19 @@ async function handleSlashCommand(interaction: any) {
     }
   }
 
-  // /lock - Revoke SEND_MESSAGES permission from @everyone role
+  // /lock - Revoke SEND_MESSAGES permission from @everyone role (exempt role can still send)
   if (interaction.commandName === 'lock') {
-    // Check if user has ManageChannels permission
+    const EXEMPT_ROLE_ID = '1402994392608018553';
+    
+    // Check if user has ManageChannels permission or has the exempt role
     let hasPermission = false;
     try {
       const member = interaction.member;
       if (member && member.permissions && member.permissions.has && member.permissions.has(PermissionFlagsBits.ManageChannels)) {
+        hasPermission = true;
+      }
+      // Also allow exempt role to use the command
+      if (member && member.roles && member.roles.cache && member.roles.cache.has(EXEMPT_ROLE_ID)) {
         hasPermission = true;
       }
     } catch (e) {
@@ -940,7 +946,7 @@ async function handleSlashCommand(interaction: any) {
     }
 
     if (!hasPermission) {
-      await interaction.reply({ content: "❌ You do not have permission to lock this channel. You need the `Manage Channels` permission.", ephemeral: true });
+      await interaction.reply({ content: "❌ You do not have permission to lock this channel.", ephemeral: true });
       return;
     }
 
@@ -954,10 +960,18 @@ async function handleSlashCommand(interaction: any) {
       // Get the @everyone role
       const everyoneRole = interaction.guild.roles.everyone;
       
-      // Revoke SEND_MESSAGES permission
+      // Revoke SEND_MESSAGES permission for @everyone
       await interaction.channel.permissionOverwrites.edit(everyoneRole, {
         SendMessages: false
       });
+      
+      // Allow exempt role to still send messages
+      const exemptRole = interaction.guild.roles.cache.get(EXEMPT_ROLE_ID);
+      if (exemptRole) {
+        await interaction.channel.permissionOverwrites.edit(exemptRole, {
+          SendMessages: true
+        });
+      }
 
       await interaction.reply({ content: "🔒 **This channel has been locked!**", ephemeral: false });
       await interaction.channel.send("This channel is now locked. Please refrain from sending messages until it is unlocked.");
@@ -969,11 +983,17 @@ async function handleSlashCommand(interaction: any) {
 
   // /unlock - Restore SEND_MESSAGES permission for @everyone role
   if (interaction.commandName === 'unlock') {
-    // Check if user has ManageChannels permission
+    const EXEMPT_ROLE_ID = '1402994392608018553';
+    
+    // Check if user has ManageChannels permission or has the exempt role
     let hasPermission = false;
     try {
       const member = interaction.member;
       if (member && member.permissions && member.permissions.has && member.permissions.has(PermissionFlagsBits.ManageChannels)) {
+        hasPermission = true;
+      }
+      // Also allow exempt role to use the command
+      if (member && member.roles && member.roles.cache && member.roles.cache.has(EXEMPT_ROLE_ID)) {
         hasPermission = true;
       }
     } catch (e) {
@@ -981,7 +1001,7 @@ async function handleSlashCommand(interaction: any) {
     }
 
     if (!hasPermission) {
-      await interaction.reply({ content: "❌ You do not have permission to unlock this channel. You need the `Manage Channels` permission.", ephemeral: true });
+      await interaction.reply({ content: "❌ You do not have permission to unlock this channel.", ephemeral: true });
       return;
     }
 
@@ -999,6 +1019,15 @@ async function handleSlashCommand(interaction: any) {
       await interaction.channel.permissionOverwrites.edit(everyoneRole, {
         SendMessages: null
       });
+      
+      // Remove the exempt role override (no longer needed when unlocked)
+      const exemptRole = interaction.guild.roles.cache.get(EXEMPT_ROLE_ID);
+      if (exemptRole) {
+        const existingOverwrite = interaction.channel.permissionOverwrites.cache.get(EXEMPT_ROLE_ID);
+        if (existingOverwrite) {
+          await existingOverwrite.delete();
+        }
+      }
 
       await interaction.reply({ content: "🔓 **This channel has been unlocked!**", ephemeral: false });
     } catch (err) {
@@ -1009,11 +1038,17 @@ async function handleSlashCommand(interaction: any) {
 
   // /orglock - Send organization message and lock the channel
   if (interaction.commandName === 'orglock') {
-    // Check if user has ManageChannels permission
+    const EXEMPT_ROLE_ID = '1402994392608018553';
+    
+    // Check if user has ManageChannels permission or has the exempt role
     let hasPermission = false;
     try {
       const member = interaction.member;
       if (member && member.permissions && member.permissions.has && member.permissions.has(PermissionFlagsBits.ManageChannels)) {
+        hasPermission = true;
+      }
+      // Also allow exempt role to use the command
+      if (member && member.roles && member.roles.cache && member.roles.cache.has(EXEMPT_ROLE_ID)) {
         hasPermission = true;
       }
     } catch (e) {
@@ -1021,7 +1056,7 @@ async function handleSlashCommand(interaction: any) {
     }
 
     if (!hasPermission) {
-      await interaction.reply({ content: "❌ You do not have permission to use orglock. You need the `Manage Channels` permission.", ephemeral: true });
+      await interaction.reply({ content: "❌ You do not have permission to use orglock.", ephemeral: true });
       return;
     }
 
@@ -1042,6 +1077,14 @@ async function handleSlashCommand(interaction: any) {
       await interaction.channel.permissionOverwrites.edit(everyoneRole, {
         SendMessages: false
       });
+      
+      // Allow exempt role to still send messages
+      const exemptRole = interaction.guild.roles.cache.get(EXEMPT_ROLE_ID);
+      if (exemptRole) {
+        await interaction.channel.permissionOverwrites.edit(exemptRole, {
+          SendMessages: true
+        });
+      }
 
       console.log("Channel locked successfully with orglock command");
     } catch (err) {
