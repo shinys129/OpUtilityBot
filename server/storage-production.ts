@@ -19,25 +19,17 @@ export interface IStorage {
 
   // Reservation operations
   getReservations(): Promise<(Reservation & { user: User })[]>;
-  getReservationByUser(userId: number): Promise<Reservation | undefined>; // Get latest active?
+  getReservationByUser(userId: number): Promise<Reservation | undefined>;
   createReservation(reservation: InsertReservation): Promise<Reservation>;
   updateReservation(id: number, updates: Partial<Reservation>): Promise<Reservation>;
   deleteReservation(id: number): Promise<void>;
-
-  // New: clear all reservations (used by /endorg)
   clearReservations(): Promise<void>;
 
   // Channel Check operations
   getChannelChecks(): Promise<ChannelCheck[]>;
   updateChannelCheck(category: string, channelId: string, isComplete: boolean): Promise<ChannelCheck>;
-
-  // New: set the list of channel IDs that belong to a category
   setCategoryChannels(category: string, channelIds: string[]): Promise<void>;
-
-  // New: clear mappings for a category
   clearCategoryChannels(category: string): Promise<void>;
-
-  // New: clear/reset all channel checks (used by /endorg) — now resets isComplete to false instead of deleting mappings
   clearChannelChecks(): Promise<void>;
 
   // Org State operations
@@ -49,22 +41,18 @@ export interface IStorage {
   getAdminRole(): Promise<string | undefined>;
   setAdminRole(roleId: string): Promise<void>;
 
-  // User Management operations
+  // User Management operations (simplified for production)
   banUser(userId: number, reason: string, bannedBy: number, expiresAt?: Date): Promise<BannedUser>;
   unbanUser(userId: number): Promise<void>;
   isUserBanned(userId: number): Promise<boolean>;
-  getBannedUsers(): Promise<(BannedUser & { user: User, bannedByUser: User })[]>;
-  
+  getBannedUsers(): Promise<BannedUser[]>;
   warnUser(userId: number, reason: string, warnedBy: number): Promise<UserWarning>;
-  getUserWarnings(userId: number): Promise<(UserWarning & { user: User, warnedByUser: User })[]>;
-  
+  getUserWarnings(userId: number): Promise<UserWarning[]>;
   createAuditLog(adminId: number, action: string, targetUserId?: number, details?: any): Promise<AuditLog>;
-  getAuditLogs(limit?: number): Promise<(AuditLog & { admin: User, targetUser?: User })[]>;
+  getAuditLogs(limit?: number): Promise<AuditLog[]>;
 }
 
 export class DatabaseStorage implements IStorage {
-  // ... existing code ...
-
   async getAdminRole(): Promise<string | undefined> {
     const [state] = await db.select().from(orgState).limit(1);
     return state?.adminRoleId ?? undefined;
@@ -84,6 +72,7 @@ export class DatabaseStorage implements IStorage {
     if (existing) return existing;
     return await this.createUser({ discordId, username });
   }
+
   async getUser(id: number): Promise<User | undefined> {
     const [user] = await db.select().from(users).where(eq(users.id, id));
     return user;
@@ -118,7 +107,6 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getReservationByUser(userId: number): Promise<Reservation | undefined> {
-    // Get the most recent one
     const [reservation] = await db.select()
       .from(reservations)
       .where(eq(reservations.userId, userId))
@@ -141,12 +129,10 @@ export class DatabaseStorage implements IStorage {
   }
 
   async deleteReservation(id: number): Promise<void> {
-    // Remove the reservation row so that the slot can be reselected.
     await db.delete(reservations).where(eq(reservations.id, id));
   }
 
   async clearReservations(): Promise<void> {
-    // Delete all reservations directly
     await db.delete(reservations);
   }
 
@@ -155,7 +141,6 @@ export class DatabaseStorage implements IStorage {
   }
 
   async updateChannelCheck(category: string, channelId: string, isComplete: boolean): Promise<ChannelCheck> {
-    // Check if exists
     const [existing] = await db.select()
       .from(channelChecks)
       .where(and(eq(channelChecks.category, category), eq(channelChecks.channelId, channelId)));
@@ -175,12 +160,8 @@ export class DatabaseStorage implements IStorage {
   }
 
   async setCategoryChannels(category: string, channelIds: string[]): Promise<void> {
-    // Remove any existing mappings for this category, then insert the provided list with isComplete=false
     await db.delete(channelChecks).where(eq(channelChecks.category, category));
-
     if (channelIds.length === 0) return;
-
-    // Bulk insert - drizzle may not support bulk insert as array in your version, so insert sequentially
     for (const cid of channelIds) {
       await db.insert(channelChecks).values({ category, channelId: cid, isComplete: false });
     }
@@ -191,16 +172,13 @@ export class DatabaseStorage implements IStorage {
   }
 
   async clearChannelChecks(): Promise<void> {
-    // Instead of deleting mappings, reset their isComplete flag to false so mappings persist.
     const rows = await db.select({ id: channelChecks.id }).from(channelChecks);
     for (const c of rows) {
-      // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
       await db.update(channelChecks).set({ isComplete: false, updatedAt: new Date() }).where(eq(channelChecks.id, c.id!));
     }
   }
 
   async getOrgState(): Promise<OrgState | undefined> {
-    // Get the most recent org state
     const [state] = await db.select()
       .from(orgState)
       .orderBy(desc(orgState.updatedAt))
@@ -209,7 +187,6 @@ export class DatabaseStorage implements IStorage {
   }
 
   async setOrgState(channelId: string, messageId: string): Promise<OrgState> {
-    // Delete any existing state and create a new one
     await db.delete(orgState);
     const [state] = await db.insert(orgState)
       .values({ channelId, messageId })
@@ -221,7 +198,7 @@ export class DatabaseStorage implements IStorage {
     await db.delete(orgState);
   }
 
-  // User Management Implementation
+  // Simplified User Management for Production
   async banUser(userId: number, reason: string, bannedBy: number, expiresAt?: Date): Promise<BannedUser> {
     const [ban] = await db.insert(bannedUsers)
       .values({ userId, reason, bannedBy, expiresAt, isActive: true })
@@ -241,36 +218,18 @@ export class DatabaseStorage implements IStorage {
       .where(and(
         eq(bannedUsers.userId, userId),
         eq(bannedUsers.isActive, true),
-        // Check if ban hasn't expired or is permanent
-        bannedUsers.expiresAt ? 
-          // If expiresAt exists, check it's still in the future
-          // Note: This is a simplified check - in production you'd want proper date comparison
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          (banned: any) => banned.expiresAt === null || banned.expiresAt > new Date() :
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          (banned: any) => banned.expiresAt === null
+        // Simplified date check
+        sql`(${bannedUsers.expiresAt} IS NULL OR ${bannedUsers.expiresAt} > NOW())`
       ))
       .limit(1);
     return !!ban;
   }
 
-  async getBannedUsers(): Promise<(BannedUser & { user: User, bannedByUser: User })[]> {
-    return await db.select({
-      id: bannedUsers.id,
-      userId: bannedUsers.userId,
-      reason: bannedUsers.reason,
-      bannedBy: bannedUsers.bannedBy,
-      bannedAt: bannedUsers.bannedAt,
-      expiresAt: bannedUsers.expiresAt,
-      isActive: bannedUsers.isActive,
-      user: users,
-      bannedByUser: { id: users.id, discordId: users.discordId, username: users.username }
-    })
-    .from(bannedUsers)
-    .innerJoin(users, eq(bannedUsers.userId, users.id))
-    .innerJoin(users.as('bannedByUser'), eq(bannedUsers.bannedBy, sql`${sql.alias(users, 'bannedByUser').id}`))
-    .where(eq(bannedUsers.isActive, true))
-    .orderBy(desc(bannedUsers.bannedAt));
+  async getBannedUsers(): Promise<BannedUser[]> {
+    return await db.select()
+      .from(bannedUsers)
+      .where(eq(bannedUsers.isActive, true))
+      .orderBy(desc(bannedUsers.bannedAt));
   }
 
   async warnUser(userId: number, reason: string, warnedBy: number): Promise<UserWarning> {
@@ -280,22 +239,11 @@ export class DatabaseStorage implements IStorage {
     return warning;
   }
 
-  async getUserWarnings(userId: number): Promise<(UserWarning & { user: User, warnedByUser: User })[]> {
-    return await db.select({
-      id: userWarnings.id,
-      userId: userWarnings.userId,
-      reason: userWarnings.reason,
-      warnedBy: userWarnings.warnedBy,
-      warnedAt: userWarnings.warnedAt,
-      isActive: userWarnings.isActive,
-      user: users,
-      warnedByUser: { id: users.id, discordId: users.discordId, username: users.username }
-    })
-    .from(userWarnings)
-    .innerJoin(users, eq(userWarnings.userId, users.id))
-    .innerJoin(users.as('warnedByUser'), eq(userWarnings.warnedBy, sql`${sql.alias(users, 'warnedByUser').id}`))
-    .where(eq(userWarnings.isActive, true))
-    .orderBy(desc(userWarnings.warnedAt));
+  async getUserWarnings(userId: number): Promise<UserWarning[]> {
+    return await db.select()
+      .from(userWarnings)
+      .where(and(eq(userWarnings.userId, userId), eq(userWarnings.isActive, true)))
+      .orderBy(desc(userWarnings.warnedAt));
   }
 
   async createAuditLog(adminId: number, action: string, targetUserId?: number, details?: any): Promise<AuditLog> {
@@ -305,22 +253,11 @@ export class DatabaseStorage implements IStorage {
     return log;
   }
 
-  async getAuditLogs(limit: number = 50): Promise<(AuditLog & { admin: User, targetUser?: User })[]> {
-    return await db.select({
-      id: auditLogs.id,
-      adminId: auditLogs.adminId,
-      action: auditLogs.action,
-      targetUserId: auditLogs.targetUserId,
-      details: auditLogs.details,
-      createdAt: auditLogs.createdAt,
-      admin: users,
-      targetUser: auditLogs.targetUserId ? { id: users.id, discordId: users.discordId, username: users.username } : null
-    })
-    .from(auditLogs)
-    .innerJoin(users, eq(auditLogs.adminId, users.id))
-    .leftJoin(users.as('targetUser'), eq(auditLogs.targetUserId, sql`${sql.alias(users, 'targetUser').id}`))
-    .orderBy(desc(auditLogs.createdAt))
-    .limit(limit);
+  async getAuditLogs(limit: number = 50): Promise<AuditLog[]> {
+    return await db.select()
+      .from(auditLogs)
+      .orderBy(desc(auditLogs.createdAt))
+      .limit(limit);
   }
 }
 
