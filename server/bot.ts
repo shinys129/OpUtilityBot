@@ -983,7 +983,7 @@ async function handleSlashCommand(interaction: any) {
   // /ir - Send incense resumed message
   if (interaction.commandName === 'ir') {
     try {
-      const resumedMessage = "**The Incense has now been resumed!**\n\n:sparkles: Good luck to you all and time to light up the starboard! :gmaxLappy: :sparkles:\n<@&1413910154457645106>";
+      const resumedMessage = "**The Incense has now been resumed!**\n\n:sparkles: Good luck to you all and time to light up the starboard! :sparkles:\n<@&1413910154457645106>";
       
       // Try to mention the role with allowed mentions
       await interaction.reply({ 
