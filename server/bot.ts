@@ -359,7 +359,7 @@ async function updateOrgEmbed(channel: TextChannel, messageId: string) {
   const filledCategories = new Set(reservations.filter(r => r.category !== 'Server Booster Reserves').map(r => r.category)).size;
 
   const embed = new EmbedBuilder()
-    .setTitle('⚡ Pokemon Reservation Hub')
+    .setTitle('⚡ Operation Incense Buyers Org')
     .setDescription(
       `**Organization Status**\n` +
       `━━━━━━━━━━━━━━━━━━━━━━\n` +
@@ -462,7 +462,7 @@ async function handleSlashCommand(interaction: any) {
     const filledCategories = new Set(reservations.filter(r => r.category !== 'Server Booster Reserves').map(r => r.category)).size;
 
     const embed = new EmbedBuilder()
-      .setTitle('⚡ Pokemon Reservation Hub')
+      .setTitle('⚡ Operation Incense Buyers Org')
       .setDescription(
         `**Organization Status**\n` +
         `━━━━━━━━━━━━━━━━━━━━━━\n` +
@@ -574,7 +574,7 @@ async function handleSlashCommand(interaction: any) {
 
       // Build the full embed with all reservation data
       const embed = new EmbedBuilder()
-        .setTitle('⚡ Pokemon Reservation Hub')
+        .setTitle('⚡ Operation Incense Buyers Org')
         .setDescription(
           `**Organization Status**\n` +
           `━━━━━━━━━━━━━━━━━━━━━━\n` +
