@@ -14,6 +14,7 @@ const CATEGORIES = {
   RESERVE1: { name: 'Reserve 1', range: '89-92' },
   RESERVE2: { name: 'Reserve 2', range: '93-96' },
   RESERVE3: { name: 'Reserve 3', range: '97-100' },
+  BOOSTER: { name: 'Server Booster Reserves', range: 'N/A' },
 };
 
 let client: Client | null = null;
@@ -183,11 +184,24 @@ async function buildCategoryButtons(reservations: any[]): Promise<ActionRowBuild
       const res = reservations.find(r => r.category.toLowerCase().replace(/\s+/g, '') === catKey.toLowerCase());
       return !!(res && res.pokemon1 && res.pokemon2);
     }
+    if (catKey.toLowerCase() === 'booster') {
+      const res = reservations.find(r => r.category === 'Server Booster Reserves');
+      return !!(res && res.pokemon1 && res.pokemon2);
+    }
     return owners.length >= 1;
   };
 
   const getLabel = (catKey: string, baseName: string, range: string) => {
     const owners = claimedCategories.get(catKey.toLowerCase()) || [];
+
+    if (catKey.toLowerCase() === 'booster') {
+      const categoryReservations = reservations.filter(r => r.category === 'Server Booster Reserves');
+      const res = categoryReservations[0];
+      if (res && res.pokemon1 && !res.pokemon2) return `${baseName} - SPLIT`;
+      if (res && res.pokemon1 && res.pokemon2) return `${baseName} - ${owners[0]}`;
+      return baseName;
+    }
+
     if (owners.length === 0) return `${baseName} (${range})`;
     if (catKey.toLowerCase() === 'regionals') return `${baseName} (${range}) [${owners.length}/3]`;
     if (catKey.toLowerCase().startsWith('reserve')) {
@@ -272,12 +286,21 @@ async function buildCategoryButtons(reservations: any[]): Promise<ActionRowBuild
         .setDisabled(isLocked('reserve3')),
     );
 
+  const boosterRow = new ActionRowBuilder<ButtonBuilder>()
+    .addComponents(
+      new ButtonBuilder()
+        .setCustomId('cat_booster')
+        .setLabel(getLabel('booster', 'Server Booster Reserves', 'N/A'))
+        .setStyle(isLocked('booster') ? ButtonStyle.Secondary : ButtonStyle.Primary)
+        .setDisabled(isLocked('booster')),
+    );
+
   const adminRow = new ActionRowBuilder<ButtonBuilder>()
     .addComponents(
       new ButtonBuilder().setCustomId('admin_manage').setLabel('🔧 Manage Reservations').setStyle(ButtonStyle.Danger),
     );
 
-  return [row1, row2, row3, adminRow];
+  return [row1, row2, row3, boosterRow, adminRow];
 }
 
 // Helper function to find the org message, trying stored ID first, then searching
@@ -322,8 +345,8 @@ async function updateOrgEmbed(channel: TextChannel, messageId: string) {
   const checks = await storage.getChannelChecks();
 
   const totalReservations = reservations.length;
-  const totalCategories = Object.keys(CATEGORIES).length;
-  const filledCategories = new Set(reservations.map(r => r.category)).size;
+  const totalCategories = Object.keys(CATEGORIES).filter(k => k !== 'BOOSTER').length;
+  const filledCategories = new Set(reservations.filter(r => r.category !== 'Server Booster Reserves').map(r => r.category)).size;
 
   const embed = new EmbedBuilder()
     .setTitle('⚡ Pokemon Reservation Hub')
@@ -421,8 +444,8 @@ async function handleSlashCommand(interaction: any) {
     const checks = await storage.getChannelChecks();
     
     const totalReservations = reservations.length;
-    const totalCategories = Object.keys(CATEGORIES).length;
-    const filledCategories = new Set(reservations.map(r => r.category)).size;
+    const totalCategories = Object.keys(CATEGORIES).filter(k => k !== 'BOOSTER').length;
+    const filledCategories = new Set(reservations.filter(r => r.category !== 'Server Booster Reserves').map(r => r.category)).size;
 
     const embed = new EmbedBuilder()
       .setTitle('⚡ Pokemon Reservation Hub')
@@ -528,8 +551,8 @@ async function handleSlashCommand(interaction: any) {
       const checks = await storage.getChannelChecks();
       
       const totalReservations = reservations.length;
-      const totalCategories = Object.keys(CATEGORIES).length;
-      const filledCategories = new Set(reservations.map(r => r.category)).size;
+      const totalCategories = Object.keys(CATEGORIES).filter(k => k !== 'BOOSTER').length;
+      const filledCategories = new Set(reservations.filter(r => r.category !== 'Server Booster Reserves').map(r => r.category)).size;
 
       // Build the full embed with all reservation data
       const embed = new EmbedBuilder()
