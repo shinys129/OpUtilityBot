@@ -1,0 +1,88 @@
+name: Repository Backup
+
+on:
+  # Run backup weekly on Sundays at 00:00 UTC
+  schedule:
+    - cron: '0 0 * * 0'
+  # Allow manual trigger
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Fetch all history for complete backup
+      
+      - name: Get current date
+        id: date
+        run: echo "date=$(date +'%Y-%m-%d')" >> $GITHUB_OUTPUT
+      
+      - name: Create backup archive
+        run: |
+          # Create a tarball of the entire repository
+          tar -czf oputilitybot-backup-${{ steps.date.outputs.date }}.tar.gz \
+            --exclude='.git' \
+            --exclude='node_modules' \
+            --exclude='dist' \
+            --exclude='.env' \
+            .
+      
+      - name: Create Release
+        id: create_release
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: backup-${{ steps.date.outputs.date }}
+          release_name: Backup ${{ steps.date.outputs.date }}
+          body: |
+            Automated repository backup created on ${{ steps.date.outputs.date }}
+            
+            This backup includes:
+            - All source code files
+            - Configuration files
+            - Documentation
+            
+            **Note:** This backup does NOT include:
+            - node_modules (dependencies - use npm install)
+            - .env file (contains secrets - backup separately)
+            - Database data (backup separately using provided scripts)
+            - dist folder (build artifacts)
+            
+            To restore from this backup:
+            1. Download the backup archive
+            2. Extract: `tar -xzf oputilitybot-backup-${{ steps.date.outputs.date }}.tar.gz`
+            3. Install dependencies: `npm install`
+            4. Configure environment: Copy `.env.example` to `.env` and fill in values
+            5. Restore database if needed
+            
+            See BACKUP.md for detailed instructions.
+          draft: false
+          prerelease: false
+      
+      - name: Upload Backup Archive
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: ./oputilitybot-backup-${{ steps.date.outputs.date }}.tar.gz
+          asset_name: oputilitybot-backup-${{ steps.date.outputs.date }}.tar.gz
+          asset_content_type: application/gzip
+      
+      - name: Create backup summary
+        run: |
+          echo "# Backup Created Successfully! 🎉" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Date:** ${{ steps.date.outputs.date }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Tag:** backup-${{ steps.date.outputs.date }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "The backup has been created as a GitHub release." >> $GITHUB_STEP_SUMMARY
+          echo "You can find it in the [Releases](${{ github.server_url }}/${{ github.repository }}/releases) section." >> $GITHUB_STEP_SUMMARY
