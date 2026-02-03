@@ -1,0 +1,137 @@
+// Handle !res command
+  if (message.content.startsWith('!res')) {
+    const args = message.content.split(' ').slice(1);
+    const pokemonNames = args.join(' ').trim();
+
+    if (!pokemonNames) {
+      await message.reply("Please specify at least one Pokemon name. Example: `!res vulpix` or `!res vulpix milcery`");
+      return;
+    }
+
+    const user = await storage.getUserByDiscordId(message.author.id);
+    if (!user) {
+      await message.reply("Please start by using /startorg and selecting a category.");
+      return;
+    }
+
+    const reservation = await storage.getReservationByUser(user.id);
+    if (!reservation) {
+      await message.reply("No active reservation found. Use /startorg.");
+      return;
+    }
+
+    // Parse Pokemon names - split by spaces, but allow for multi-word Pokemon names
+    const pokemonArray = pokemonNames.split(' ').filter(p => p.length > 0);
+    
+    // For Reserve categories, allow 1 or 2 Pokemon
+    const isReserveCategory = reservation.category.startsWith('Reserve');
+    const maxPokemon = isReserveCategory ? 2 : 1;
+    
+    if (pokemonArray.length > maxPokemon) {
+      await message.reply(`You can only reserve up to ${maxPokemon} Pokemon for ${reservation.category}.`);
+      return;
+    }
+
+    // Check if any of the Pokemon are already reserved by someone else
+    try {
+      const allReservations = await storage.getReservations();
+      
+      for (const pokemonName of pokemonArray) {
+        const normalized = pokemonName.toLowerCase();
+        const existing = allReservations.find(r => {
+          const candidates = [r.pokemon1, r.pokemon2, r.additionalPokemon].filter(Boolean) as string[];
+          return candidates.some(p => p.trim().toLowerCase() === normalized);
+        });
+
+        if (existing) {
+          if (existing.user && existing.user.discordId === message.author.id) {
+            await message.reply(`You have already reserved ${pokemonName}.`);
+            return;
+          } else {
+            await message.reply(`${pokemonName} has already been reserved this round.`);
+            return;
+          }
+        }
+      }
+    } catch (err) {
+      console.error("Failed to check existing reservations for duplicates:", err);
+    }
+
+    let updated = false;
+    
+    // Handle single Pokemon reservation
+    if (pokemonArray.length === 1) {
+      const pokemonName = pokemonArray[0];
+      
+      if (!reservation.pokemon1) {
+        await storage.updateReservation(reservation.id, { pokemon1: pokemonName });
+        await message.reply(`Reserved ${pokemonName} for ${reservation.category}.${isReserveCategory ? ' You can add one more Pokemon with !res <pokemon>.' : ''}`);
+        updated = true;
+      } else if (!reservation.pokemon2 && isReserveCategory) {
+        await storage.updateReservation(reservation.id, { pokemon2: pokemonName });
+        await message.reply(`Reserved second Pokemon ${pokemonName} for ${reservation.category}.`);
+        updated = true;
+      } else if (reservation.category === 'Regionals' && reservation.subCategory === 'Galarian' && !reservation.additionalPokemon) {
+        // Handle Galarian bird as additionalPokemon
+        const normalized = pokemonName.toLowerCase();
+        const bird = normalized.includes('articuno') ? 'Galarian Articuno' : 
+                    normalized.includes('zapdos') ? 'Galarian Zapdos' : 
+                    normalized.includes('moltres') ? 'Galarian Moltres' : null;
+        const valueToSave = bird ?? (pokemonName.startsWith('Galarian') ? pokemonName : `Galarian ${pokemonName}`);
+        await storage.updateReservation(reservation.id, { additionalPokemon: valueToSave });
+        await message.reply(`Added Galarian choice ${valueToSave}.`);
+        updated = true;
+      } else if (reservation.category === 'Gmax' && !reservation.additionalPokemon) {
+        // Handle Gmax rare choice
+        await storage.updateReservation(reservation.id, { additionalPokemon: pokemonName });
+        await message.reply(`Added Rare Gmax choice ${pokemonName}.`);
+        updated = true;
+      } else {
+        await message.reply(`You already have reservations for this category.`);
+      }
+    } 
+    // Handle double Pokemon reservation (only for Reserve categories)
+    else if (pokemonArray.length === 2 && isReserveCategory) {
+      const [pokemon1, pokemon2] = pokemonArray;
+      
+      if (!reservation.pokemon1) {
+        await storage.updateReservation(reservation.id, { pokemon1, pokemon2 });
+        await message.reply(`Reserved ${pokemon1} and ${pokemon2} for ${reservation.category}.`);
+        updated = true;
+      } else if (!reservation.pokemon2) {
+        await storage.updateReservation(reservation.id, { pokemon2 });
+        await message.reply(`Reserved second Pokemon ${pokemon2} for ${reservation.category}.`);
+        updated = true;
+      } else {
+        await message.reply(`You already have reservations for this category.`);
+      }
+    }
+
+    // After adding a pokemon for Gmax, prompt them to pick a Gigantamax Rare via buttons (also instruct them about !gmax)
+    if (updated && reservation && reservation.category === 'Gmax' && message.channel instanceof TextChannel) {
+      const choicesRow = new ActionRowBuilder<ButtonBuilder>()
+        .addComponents(
+          new ButtonBuilder().setCustomId('gmax_pick_urshifu').setLabel('Urshifu').setStyle(ButtonStyle.Primary),
+          new ButtonBuilder().setCustomId('gmax_pick_melmetal').setLabel('Melmetal').setStyle(ButtonStyle.Primary),
+          new ButtonBuilder().setCustomId('gmax_pick_eternatus').setLabel('Eternatus').setStyle(ButtonStyle.Primary),
+        );
+      await message.reply({ content: 'Choose your Gigantamax Rare (or type `!gmax <name>`):', components: [choicesRow] });
+
+      // update org embed as well
+      const messages = await message.channel.messages.fetch({ limit: 50 });
+      const orgMessage = messages.find((m: DiscordMessage) => m.author.id === client?.user?.id && m.embeds.length > 0 && (m.embeds[0].title?.includes('Pokemon Reservation') || m.embeds[0].title?.includes('Reservation Hub')));
+      if (orgMessage) {
+        await updateOrgEmbed(message.channel as TextChannel, orgMessage.id);
+      }
+    }
+
+    // Attempt to update the last known Org embed in this channel for non-Gmax updates
+    if (updated && message.channel instanceof TextChannel) {
+      // Search for the bot's embed message in the last 50 messages
+      const messages = await message.channel.messages.fetch({ limit: 50 });
+      const orgMessage = messages.find((m: DiscordMessage) => m.author.id === client?.user?.id && m.embeds.length > 0 && (m.embeds[0].title?.includes('Pokemon Reservation') || m.embeds[0].title?.includes('Reservation Hub')));
+      if (orgMessage) {
+        await updateOrgEmbed(message.channel, orgMessage.id);
+      }
+    }
+  }
