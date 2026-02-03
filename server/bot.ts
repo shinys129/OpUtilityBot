@@ -179,10 +179,14 @@ async function buildCategoryButtons(reservations: any[]): Promise<ActionRowBuild
   const isLocked = (catKey: string) => {
     const owners = claimedCategories.get(catKey.toLowerCase()) || [];
     if (catKey.toLowerCase() === 'regionals') return owners.length >= 3;
-    if (catKey.toLowerCase() === 'missingno' || catKey.toLowerCase().startsWith('reserve')) {
-      // For reserves/missingno, it's only locked if there are 2 pokemon reserved
+    if (catKey.toLowerCase().startsWith('reserve')) {
+      // For reserves, it's only locked if there are 2 pokemon reserved (allows split)
       const res = reservations.find(r => r.category.toLowerCase().replace(/\s+/g, '') === catKey.toLowerCase());
       return !!(res && res.pokemon1 && res.pokemon2);
+    }
+    // MissingNo locks after 1 person claims (no split), but they can reserve 2 Pokemon
+    if (catKey.toLowerCase() === 'missingno') {
+      return owners.length >= 1;
     }
     if (catKey.toLowerCase() === 'booster') {
       const res = reservations.find(r => r.category === 'Server Booster Reserves');
@@ -204,7 +208,7 @@ async function buildCategoryButtons(reservations: any[]): Promise<ActionRowBuild
 
     if (owners.length === 0) return `${baseName} (${range})`;
     if (catKey.toLowerCase() === 'regionals') return `${baseName} (${range}) [${owners.length}/3]`;
-    if (catKey.toLowerCase() === 'missingno' || catKey.toLowerCase().startsWith('reserve')) {
+    if (catKey.toLowerCase().startsWith('reserve')) {
       const categoryReservations = reservations.filter(r => r.category.toLowerCase().replace(/\s+/g, '') === catKey.toLowerCase());
       // If 2 people have claimed (split taken)
       if (categoryReservations.length >= 2) {
@@ -383,14 +387,15 @@ async function updateOrgEmbed(channel: TextChannel, messageId: string) {
         const parts = [`┃ 👤 **${r.user.username}**`];
         if (r.subCategory) parts.push(`\`${r.subCategory}\``);
         
-    const isReserveOrMissingNo = cat.name.startsWith('Reserve') || cat.name === 'MissingNo';
+    const isReserve = cat.name.startsWith('Reserve');
     const pokemon = [r.pokemon1, r.pokemon2, r.additionalPokemon].filter(Boolean);
     
     if (pokemon.length > 0) {
       parts.push(`\n┃ 🎯 ${pokemon.join(' • ')}`);
     }
     
-    if (isReserveOrMissingNo && r.pokemon1 && !r.pokemon2) {
+    // Only show split available for Reserve categories (not MissingNo)
+    if (isReserve && r.pokemon1 && !r.pokemon2) {
       parts.push(`\n┃ 💎 *Split available*`);
     }
         
