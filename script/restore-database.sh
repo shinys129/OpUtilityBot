@@ -23,8 +23,10 @@ if [ ! -f .env ]; then
     exit 1
 fi
 
-# Load environment variables from .env
-export $(grep -v '^#' .env | xargs)
+# Load environment variables from .env safely
+set -a
+source .env
+set +a
 
 # Set default values if not provided
 DB_HOST="${DB_HOST:-localhost}"
