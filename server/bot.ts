@@ -480,6 +480,11 @@ async function handleSlashCommand(interaction: any) {
     const buttons = await buildCategoryButtons(reservations);
     const message = await interaction.reply({ embeds: [embed], components: buttons, fetchReply: true });
 
+    // Send role message if all categories filled
+    if (filledCategories === totalCategories) {
+      await interaction.channel.send(`Thank you <@&1468236218331562024> all slots have been filled and you can start buying your channels!`);
+    }
+
     if (interaction.channel instanceof TextChannel) {
       await storage.setOrgState(interaction.channel.id, message.id);
     }
@@ -694,6 +699,26 @@ async function handleSlashCommand(interaction: any) {
       }
     } catch (findErr) {
       console.error("[endorg] Error finding org message:", findErr);
+    }
+
+    // Role removal logic
+    const reservations = await storage.getReservations();
+    const roleId = "1468236218331562024";
+    const guild = interaction.guild;
+
+    if (guild) {
+      console.log(`[endorg] Removing roles from ${reservations.length} users...`);
+      for (const res of reservations) {
+        try {
+          const member = await guild.members.fetch(res.user.discordId).catch(() => null);
+          if (member && member.roles.cache.has(roleId)) {
+            await member.roles.remove(roleId);
+            console.log(`[endorg] Removed role from ${res.user.username}`);
+          }
+        } catch (error) {
+          console.error(`[endorg] Failed to remove role from ${res.user.username}:`, error);
+        }
+      }
     }
 
     // Clear reservations and channel checks (reset isComplete but preserve mappings)
