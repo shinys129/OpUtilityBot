@@ -1686,9 +1686,9 @@ async function handleMessage(message: Message) {
 
     if (!reservation.pokemon1) {
       await storage.updateReservation(reservation.id, { pokemon1: pokemonName });
-      await message.reply(`Reserved ${pokemonName} for ${reservation.category}.${isReserveCategory ? ' You can add one more Pokemon with !res <pokemon>.' : ''}`);
+      await message.reply(`Reserved ${pokemonName} for ${reservation.category}.${(isReserveCategory || isMissingNo) ? ' You can add one more Pokemon with !res <pokemon>.' : ''}`);
       updated = true;
-    } else if (!reservation.pokemon2 && isReserveCategory) {
+    } else if (!reservation.pokemon2 && (isReserveCategory || isMissingNo)) {
       await storage.updateReservation(reservation.id, { pokemon2: pokemonName });
       await message.reply(`Reserved second Pokemon ${pokemonName} for ${reservation.category}.`);
       updated = true;
@@ -1711,8 +1711,8 @@ async function handleMessage(message: Message) {
       await message.reply(`You already have reservations for this category.`);
     }
   } 
-  // Handle double Pokemon reservation (only for Reserve categories)
-  else if (pokemonArray.length === 2 && isReserveCategory) {
+  // Handle double Pokemon reservation (for Reserve categories and MissingNo)
+  else if (pokemonArray.length === 2 && (isReserveCategory || isMissingNo)) {
     const [pokemon1, pokemon2] = pokemonArray;
 
     if (!reservation.pokemon1) {
