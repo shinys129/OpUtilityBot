@@ -1407,7 +1407,7 @@ async function handleButton(interaction: any) {
         if (existing.pokemon1 && !existing.pokemon2) {
           // Person who already has it can't claim again as a new reservation
           if (existing.user.discordId === userId) {
-            await interaction.reply({ content: `You already have this reservation. Use !res to add your second pokemon.`, ephemeral: true });
+            await interaction.reply({ content: `You already have this reservation. **Use !res to add your second pokemon**.`, ephemeral: true });
             return;
           }
           
@@ -1415,7 +1415,7 @@ async function handleButton(interaction: any) {
           if (categoryReservations.length >= 2) {
              const alreadyClaimedByUser = categoryReservations.find(r => r.user.discordId === userId);
              if (alreadyClaimedByUser) {
-               await interaction.reply({ content: `You already have a split reservation for ${categoryName}. Use !res to reserve.`, ephemeral: true });
+               await interaction.reply({ content: `You already have a split reservation for ${categoryName}. **Use !res to reserve**.`, ephemeral: true });
              } else {
                await interaction.reply({ content: `${categoryName} is already fully claimed (Split taken).`, ephemeral: true });
              }
@@ -1428,7 +1428,7 @@ async function handleButton(interaction: any) {
             category: categoryName,
             channelRange: range,
           });
-          await interaction.reply({ content: `You claimed the split for ${categoryName}. Use !res (Pokemon) to reserve.`, ephemeral: true });
+          await interaction.reply({ content: `You claimed the split for ${categoryName}. **Use !res (Pokemon) to reserve**.`, ephemeral: true });
           if (interaction.channel instanceof TextChannel && interaction.message) {
             await updateOrgEmbed(interaction.channel, interaction.message.id);
           }
@@ -1474,12 +1474,14 @@ async function handleButton(interaction: any) {
             new ButtonBuilder().setCustomId('gmax_pick_eternatus').setLabel('Eternatus').setStyle(ButtonStyle.Primary),
           );
         await interaction.reply({ 
-          content: `You selected ${categoryName}. Choose your Gigantamax Rare, then use !res (Pokemon) to reserve your Gmax:`, 
+          content: `You selected ${categoryName}. Choose your Gigantamax Rare, then **use !res (Pokemon) to reserve your Gmax**:`, 
           components: [gmaxRow], 
           ephemeral: true 
         });
+      } else if (customId === 'cat_missingno') {
+        await interaction.reply({ content: `You selected ${categoryName}. **Use !res (Pokemon Pokemon) to reserve your 2 Pokemon**.`, ephemeral: true });
       } else {
-        await interaction.reply({ content: `You selected ${categoryName}. Use !res (Pokemon) to reserve.`, ephemeral: true });
+        await interaction.reply({ content: `You selected ${categoryName}. **Use !res (Pokemon) to reserve**.`, ephemeral: true });
       }
     }
 
@@ -1523,7 +1525,7 @@ async function handleButton(interaction: any) {
             new ButtonBuilder().setCustomId('galarian_bird_zapdos').setLabel('Galarian Zapdos').setStyle(ButtonStyle.Primary),
             new ButtonBuilder().setCustomId('galarian_bird_moltres').setLabel('Galarian Moltres').setStyle(ButtonStyle.Primary),
           );
-        await interaction.reply({ content: `Updated to Standard Regional. You can pick a Galarian bird below, or use !res to add your pokemon:`, components: [birdRow], ephemeral: true });
+        await interaction.reply({ content: `Updated to Standard Regional. You can pick a Galarian bird below, or **use !res to add your pokemon**:`, components: [birdRow], ephemeral: true });
       } else {
         // For Alolan and Hisuian, we explicitly tell user no extra reserve slot is available
         await interaction.reply({ content: `Updated sub-category to ${sub}. Note: Alolan and Hisuian subcategories do not receive a separate reserve slot.`, ephemeral: true });
@@ -1577,12 +1579,13 @@ async function handleSelectMenu(interaction: any) {
 }
 
 async function handleMessage(message: Message) {
-  if (message.author.bot) return;
-
-  // ------- robust Pokétwo buy detection -------
-  const buyRegex = /inc buy -y/i;
-  const mentionsPoketwo = message.mentions.users?.some(u => /pok[eé]two/i.test(u.username));
-  if (buyRegex.test(message.content) && mentionsPoketwo) {
+  // ------- Pokétwo incense purchase detection -------
+  // Detect PokeTwo's response: "You purchased an incense for..."
+  const POKETWO_BOT_ID = '716390085896962058';
+  const isPokeTwoMessage = message.author.id === POKETWO_BOT_ID;
+  const purchasedIncense = /you purchased an incense for/i.test(message.content);
+  
+  if (isPokeTwoMessage && purchasedIncense) {
     const channelId = message.channel.id;
 
     // Only update if the channel is registered for a category
@@ -1601,12 +1604,13 @@ async function handleMessage(message: Message) {
           await updateOrgEmbed(message.channel, orgMessage.id);
         }
       }
-    } else {
-      // Not a registered channel for any category; ignore or optionally store as Unknown
-      // await storage.updateChannelCheck('Unknown', channelId, true);
     }
+    return; // PokeTwo message handled, don't process further
   }
   // ------- end buy detection -------
+
+  // Skip other bot messages
+  if (message.author.bot) return;
 
   // Handle !res command
   if (message.content.startsWith('!res')) {
