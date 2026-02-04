@@ -2,6 +2,9 @@ import { Client, GatewayIntentBits, Events, ActionRowBuilder, ButtonBuilder, But
 import type { Message as DiscordMessage } from "discord.js";
 import { storage } from "./storage";
 
+// Admin Role ID that can use admin commands
+const ADMIN_ROLE_ID = '1402994392608018553';
+
 // Constants for Category Configuration
 const CATEGORIES = {
   RARES: { name: 'Rares', range: '1-23' },
@@ -368,7 +371,7 @@ async function updateOrgEmbed(channel: TextChannel, messageId: string) {
       `━━━━━━━━━━━━━━━━━━━━━━\n\n` +
       `Click a category button below to claim it.\nUse \`/cancelres\` to release your slot.`
     )
-    .setColor(0x5865F2)
+    .setColor(0xBA00C4)
     .setThumbnail('https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/items/master-ball.png')
     .setFooter({ text: 'Use /refreshorg to update • /reloadorg if stuck • /endorg to close' })
     .setTimestamp();
@@ -454,6 +457,27 @@ async function handleSlashCommand(interaction: any) {
       return;
     }
 
+    // Check admin permission
+    let isAdmin = false;
+    const dbAdminRoleId = await storage.getAdminRole();
+    try {
+      const member = interaction.member;
+      if (member && member.permissions && member.permissions.has && member.permissions.has(PermissionFlagsBits.ManageGuild)) {
+        isAdmin = true;
+      } else if (member && member.roles && member.roles.cache && member.roles.cache.has(ADMIN_ROLE_ID)) {
+        isAdmin = true;
+      } else if (member && dbAdminRoleId && member.roles && member.roles.cache && member.roles.cache.has(dbAdminRoleId)) {
+        isAdmin = true;
+      }
+    } catch (e) {
+      console.error("Error checking permissions:", e);
+    }
+
+    if (!isAdmin) {
+      await interaction.reply({ content: "You do not have permission to start an organization.", ephemeral: true });
+      return;
+    }
+
     const reservations = await storage.getReservations();
     const checks = await storage.getChannelChecks();
     
@@ -471,7 +495,7 @@ async function handleSlashCommand(interaction: any) {
         `━━━━━━━━━━━━━━━━━━━━━━\n\n` +
         `Click a category button below to claim it.\nUse \`/cancelres\` to release your slot.`
       )
-      .setColor(0x5865F2)
+      .setColor(0xBA00C4)
       .setThumbnail('https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/items/master-ball.png')
       .setFooter({ text: 'Use /refreshorg to update • /reloadorg if stuck • /endorg to close' })
       .setTimestamp();
@@ -537,6 +561,27 @@ async function handleSlashCommand(interaction: any) {
       return;
     }
 
+    // Check admin permission
+    let isAdmin = false;
+    const dbAdminRoleId = await storage.getAdminRole();
+    try {
+      const member = interaction.member;
+      if (member && member.permissions && member.permissions.has && member.permissions.has(PermissionFlagsBits.ManageGuild)) {
+        isAdmin = true;
+      } else if (member && member.roles && member.roles.cache && member.roles.cache.has(ADMIN_ROLE_ID)) {
+        isAdmin = true;
+      } else if (member && dbAdminRoleId && member.roles && member.roles.cache && member.roles.cache.has(dbAdminRoleId)) {
+        isAdmin = true;
+      }
+    } catch (e) {
+      console.error("Error checking permissions:", e);
+    }
+
+    if (!isAdmin) {
+      await interaction.reply({ content: "You do not have permission to refresh the organization.", ephemeral: true });
+      return;
+    }
+
     try {
       await interaction.deferReply({ ephemeral: true });
 
@@ -563,6 +608,27 @@ async function handleSlashCommand(interaction: any) {
       return;
     }
 
+    // Check admin permission
+    let isAdmin = false;
+    const dbAdminRoleId = await storage.getAdminRole();
+    try {
+      const member = interaction.member;
+      if (member && member.permissions && member.permissions.has && member.permissions.has(PermissionFlagsBits.ManageGuild)) {
+        isAdmin = true;
+      } else if (member && member.roles && member.roles.cache && member.roles.cache.has(ADMIN_ROLE_ID)) {
+        isAdmin = true;
+      } else if (member && dbAdminRoleId && member.roles && member.roles.cache && member.roles.cache.has(dbAdminRoleId)) {
+        isAdmin = true;
+      }
+    } catch (e) {
+      console.error("Error checking permissions:", e);
+    }
+
+    if (!isAdmin) {
+      await interaction.reply({ content: "You do not have permission to reload the organization.", ephemeral: true });
+      return;
+    }
+
     try {
       // Get current reservations
       const reservations = await storage.getReservations();
@@ -583,7 +649,7 @@ async function handleSlashCommand(interaction: any) {
           `━━━━━━━━━━━━━━━━━━━━━━\n\n` +
           `Click a category button below to claim it.\nUse \`/cancelres\` to release your slot.`
         )
-        .setColor(0x5865F2)
+        .setColor(0xBA00C4)
         .setThumbnail('https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/items/master-ball.png')
         .setFooter({ text: 'Use /refreshorg to update • /reloadorg if stuck • /endorg to close' })
         .setTimestamp();
@@ -727,15 +793,17 @@ async function handleSlashCommand(interaction: any) {
   if (interaction.commandName === 'endorg') {
     console.log("[endorg] Command received");
     
-    // Authorization: either ManageGuild permission or role id set in database
+    // Authorization: either ManageGuild permission, hardcoded admin role, or role set in database
     let isAdmin = false;
-    const adminRoleId = await storage.getAdminRole();
+    const dbAdminRoleId = await storage.getAdminRole();
 
     try {
       const member = interaction.member;
       if (member && member.permissions && member.permissions.has && member.permissions.has(PermissionFlagsBits.ManageGuild)) {
         isAdmin = true;
-      } else if (member && adminRoleId && member.roles && member.roles.cache && member.roles.cache.has(adminRoleId)) {
+      } else if (member && member.roles && member.roles.cache && member.roles.cache.has(ADMIN_ROLE_ID)) {
+        isAdmin = true;
+      } else if (member && dbAdminRoleId && member.roles && member.roles.cache && member.roles.cache.has(dbAdminRoleId)) {
         isAdmin = true;
       }
     } catch (e) {
@@ -951,9 +1019,8 @@ async function handleSlashCommand(interaction: any) {
     }
   }
 
-  // /lock - Revoke SEND_MESSAGES permission from @everyone role (exempt role can still send)
+  // /lock - Revoke SEND_MESSAGES permission from @everyone role (admin role can still send)
   if (interaction.commandName === 'lock') {
-    const EXEMPT_ROLE_ID = '1402994392608018553';
     
     // Check if user has ManageChannels permission or has the exempt role
     let hasPermission = false;
@@ -963,7 +1030,7 @@ async function handleSlashCommand(interaction: any) {
         hasPermission = true;
       }
       // Also allow exempt role to use the command
-      if (member && member.roles && member.roles.cache && member.roles.cache.has(EXEMPT_ROLE_ID)) {
+      if (member && member.roles && member.roles.cache && member.roles.cache.has(ADMIN_ROLE_ID)) {
         hasPermission = true;
       }
     } catch (e) {
@@ -991,7 +1058,7 @@ async function handleSlashCommand(interaction: any) {
       });
       
       // Allow exempt role to still send messages
-      const exemptRole = interaction.guild.roles.cache.get(EXEMPT_ROLE_ID);
+      const exemptRole = interaction.guild.roles.cache.get(ADMIN_ROLE_ID);
       if (exemptRole) {
         await interaction.channel.permissionOverwrites.edit(exemptRole, {
           SendMessages: true
@@ -1008,7 +1075,6 @@ async function handleSlashCommand(interaction: any) {
 
   // /unlock - Restore SEND_MESSAGES permission for @everyone role
   if (interaction.commandName === 'unlock') {
-    const EXEMPT_ROLE_ID = '1402994392608018553';
     
     // Check if user has ManageChannels permission or has the exempt role
     let hasPermission = false;
@@ -1018,7 +1084,7 @@ async function handleSlashCommand(interaction: any) {
         hasPermission = true;
       }
       // Also allow exempt role to use the command
-      if (member && member.roles && member.roles.cache && member.roles.cache.has(EXEMPT_ROLE_ID)) {
+      if (member && member.roles && member.roles.cache && member.roles.cache.has(ADMIN_ROLE_ID)) {
         hasPermission = true;
       }
     } catch (e) {
@@ -1046,9 +1112,9 @@ async function handleSlashCommand(interaction: any) {
       });
       
       // Remove the exempt role override (no longer needed when unlocked)
-      const exemptRole = interaction.guild.roles.cache.get(EXEMPT_ROLE_ID);
+      const exemptRole = interaction.guild.roles.cache.get(ADMIN_ROLE_ID);
       if (exemptRole) {
-        const existingOverwrite = interaction.channel.permissionOverwrites.cache.get(EXEMPT_ROLE_ID);
+        const existingOverwrite = interaction.channel.permissionOverwrites.cache.get(ADMIN_ROLE_ID);
         if (existingOverwrite) {
           await existingOverwrite.delete();
         }
@@ -1063,7 +1129,6 @@ async function handleSlashCommand(interaction: any) {
 
   // /orglock - Send organization message and lock the channel
   if (interaction.commandName === 'orglock') {
-    const EXEMPT_ROLE_ID = '1402994392608018553';
     
     // Check if user has ManageChannels permission or has the exempt role
     let hasPermission = false;
@@ -1073,7 +1138,7 @@ async function handleSlashCommand(interaction: any) {
         hasPermission = true;
       }
       // Also allow exempt role to use the command
-      if (member && member.roles && member.roles.cache && member.roles.cache.has(EXEMPT_ROLE_ID)) {
+      if (member && member.roles && member.roles.cache && member.roles.cache.has(ADMIN_ROLE_ID)) {
         hasPermission = true;
       }
     } catch (e) {
@@ -1104,7 +1169,7 @@ async function handleSlashCommand(interaction: any) {
       });
       
       // Allow exempt role to still send messages
-      const exemptRole = interaction.guild.roles.cache.get(EXEMPT_ROLE_ID);
+      const exemptRole = interaction.guild.roles.cache.get(ADMIN_ROLE_ID);
       if (exemptRole) {
         await interaction.channel.permissionOverwrites.edit(exemptRole, {
           SendMessages: true
@@ -1262,15 +1327,17 @@ async function handleButton(interaction: any) {
 
   // Admin manage button
   if (customId === 'admin_manage') {
-    // Authorization: either ManageGuild permission or role id set in database
+    // Authorization: either ManageGuild permission, hardcoded admin role, or role set in database
     let isAdmin = false;
-    const adminRoleId = await storage.getAdminRole();
+    const dbAdminRoleId = await storage.getAdminRole();
 
     try {
       const member = interaction.member;
       if (member && member.permissions && member.permissions.has && member.permissions.has(PermissionFlagsBits.ManageGuild)) {
         isAdmin = true;
-      } else if (member && adminRoleId && member.roles && member.roles.cache && member.roles.cache.has(adminRoleId)) {
+      } else if (member && member.roles && member.roles.cache && member.roles.cache.has(ADMIN_ROLE_ID)) {
+        isAdmin = true;
+      } else if (member && dbAdminRoleId && member.roles && member.roles.cache && member.roles.cache.has(dbAdminRoleId)) {
         isAdmin = true;
       }
     } catch (e) {
