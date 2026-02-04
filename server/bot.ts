@@ -665,7 +665,7 @@ async function handleSlashCommand(interaction: any) {
     }
   }
 
-  // New: /cancelres - cancel the user's latest active reservation
+  // New: /cancelres - cancel the user's reservation (with category selection if multiple)
   if (interaction.commandName === 'cancelres') {
     const discordId = interaction.user.id;
     const user = await storage.getUserByDiscordId(discordId);
@@ -674,12 +674,37 @@ async function handleSlashCommand(interaction: any) {
       return;
     }
 
-    const reservation = await storage.getReservationByUser(user.id);
-    if (!reservation) {
+    // Get all reservations for this user
+    const allReservations = await storage.getReservations();
+    const userReservations = allReservations.filter(r => r.userId === user.id);
+    
+    if (userReservations.length === 0) {
       await interaction.reply({ content: "No active reservation found.", ephemeral: true });
       return;
     }
 
+    // If user has multiple reservations, show a selection menu
+    if (userReservations.length > 1) {
+      const options = userReservations.map(r => ({
+        label: `${r.category}${r.subCategory ? ` (${r.subCategory})` : ''}`,
+        description: r.pokemon1 ? `${r.pokemon1}${r.pokemon2 ? `, ${r.pokemon2}` : ''}` : 'No pokemon reserved',
+        value: String(r.id),
+      }));
+
+      const select = new StringSelectMenuBuilder()
+        .setCustomId('user_cancel_select')
+        .setPlaceholder('Select which reservation to cancel')
+        .addOptions(options)
+        .setMinValues(1)
+        .setMaxValues(1);
+
+      const row = new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(select);
+      await interaction.reply({ content: "You have multiple reservations. Select which one to cancel:", components: [row], ephemeral: true });
+      return;
+    }
+
+    // If only one reservation, cancel it directly
+    const reservation = userReservations[0];
     try {
       await storage.deleteReservation(reservation.id);
       await interaction.reply({ content: `Cancelled reservation for ${reservation.category}.`, ephemeral: true });
@@ -1216,7 +1241,13 @@ async function handleButton(interaction: any) {
     }
 
     await storage.updateReservation(reservation.id, { additionalPokemon: choice });
-    await interaction.reply({ content: `Set your Galarian bird choice to ${choice}. **You may now use !res to select your additional reserve**.`, ephemeral: true });
+    // Only Standard Regional gets extra reserve via !res
+    if (reservation.subCategory === 'standard') {
+      await interaction.reply({ content: `Set your Galarian bird choice to ${choice}. **You may now use !res to select your additional reserve**.`, ephemeral: true });
+    } else {
+      // Galarian sub-category - no extra reserve
+      await interaction.reply({ content: `Set your Galarian bird choice to ${choice}.`, ephemeral: true });
+    }
 
     // update embed if present
     if (interaction.channel instanceof TextChannel) {
@@ -1289,16 +1320,22 @@ async function handleButton(interaction: any) {
     // Special handling for Regionals - allow multiple subcategories but not Standard Regional with others
     if (categoryName === 'Regionals') {
       const regionalReservations = existingReservations.filter(r => r.category === 'Regionals');
-      const hasStandardRegional = regionalReservations.some(r => r.subCategory === 'standard' || r.subCategory === 'none');
       
-      // Block if someone has Standard Regional
-      if (hasStandardRegional) {
-        const standardHolder = regionalReservations.find(r => r.subCategory === 'standard' || r.subCategory === 'none');
-        if (standardHolder?.user.discordId === userId) {
-          await interaction.reply({ content: `You already have a Standard Regional reservation. Use /cancelres to release it first.`, ephemeral: true });
-        } else {
-          await interaction.reply({ content: `Regionals is fully claimed by ${standardHolder?.user.username} (Standard Regional). They must use /cancelres first.`, ephemeral: true });
-        }
+      // Check if Standard Regional exists and holder has used !res (picked a Galarian bird)
+      const standardHolder = regionalReservations.find(r => r.subCategory === 'standard' || r.subCategory === 'none');
+      const hasStandardRegional = !!standardHolder;
+      const standardHasReserved = standardHolder && standardHolder.additionalPokemon;
+      
+      // Check if any sub-category holder has used !res (has pokemon1 set OR additionalPokemon for galarian bird)
+      const subCategoryReservations = regionalReservations.filter(r => 
+        r.subCategory && r.subCategory !== 'standard' && r.subCategory !== 'none'
+      );
+      const anySubCategoryHasReserved = subCategoryReservations.some(r => r.pokemon1 || r.additionalPokemon);
+      
+      // Check if user already has a Regional reservation
+      const userRegionalRes = regionalReservations.find(r => r.user.discordId === userId);
+      if (userRegionalRes) {
+        await interaction.reply({ content: `You already have a Regional reservation (${userRegionalRes.subCategory || 'pending'}). Use /cancelres to release it first.`, ephemeral: true });
         return;
       }
       
@@ -1309,17 +1346,21 @@ async function handleButton(interaction: any) {
                             takenSubcategories.includes('alolan') && 
                             takenSubcategories.includes('hisuian');
       
-      // Block if all 3 subcategories are taken
+      // Block if all 3 subcategories are taken OR Standard has reserved (picked their bird)
       if (allThreeTaken) {
         await interaction.reply({ content: `All Regional subcategories are taken. Someone must use /cancelres first.`, ephemeral: true });
         return;
       }
       
-      // Check if user already has a pending Regional reservation (no subCategory yet)
-      const userPendingRegional = regionalReservations.find(r => r.user.discordId === userId && !r.subCategory);
+      if (hasStandardRegional && standardHasReserved) {
+        await interaction.reply({ content: `A Sub category has been taken so Standard regionals is unavailable.`, ephemeral: true });
+        return;
+      }
       
-      // Build subcategory buttons - hide ones already taken, hide Standard if any subcategory is taken
+      // Build subcategory buttons
       const buttons: ButtonBuilder[] = [];
+      
+      // Show sub-categories if not already taken
       if (!takenSubcategories.includes('galarian')) {
         buttons.push(new ButtonBuilder().setCustomId('sub_galarian').setLabel('Galarian').setStyle(ButtonStyle.Primary));
       }
@@ -1329,8 +1370,11 @@ async function handleButton(interaction: any) {
       if (!takenSubcategories.includes('hisuian')) {
         buttons.push(new ButtonBuilder().setCustomId('sub_hisuian').setLabel('Hisuian').setStyle(ButtonStyle.Primary));
       }
-      // Only show Standard Regional if no one has picked any subcategory yet
-      if (confirmedRegionals.length === 0) {
+      
+      // Show Standard Regional if:
+      // - No sub-category has used !res yet (anySubCategoryHasReserved = false)
+      // - No Standard Regional already exists
+      if (!hasStandardRegional && !anySubCategoryHasReserved) {
         buttons.push(new ButtonBuilder().setCustomId('sub_none').setLabel('Standard Regional').setStyle(ButtonStyle.Secondary));
       }
       
@@ -1340,14 +1384,12 @@ async function handleButton(interaction: any) {
         return;
       }
       
-      // Only create a new reservation if user doesn't have a pending one
-      if (!userPendingRegional) {
-        await storage.createReservation({
-          userId: user.id,
-          category: categoryName,
-          channelRange: range,
-        });
-      }
+      // Create new reservation (we already checked user doesn't have one earlier)
+      await storage.createReservation({
+        userId: user.id,
+        category: categoryName,
+        channelRange: range,
+      });
       
       const subRow = new ActionRowBuilder<ButtonBuilder>().addComponents(buttons);
       await interaction.reply({ content: `You selected ${categoryName}. Choose a sub-category:`, components: [subRow], ephemeral: true });
@@ -1422,13 +1464,13 @@ async function handleButton(interaction: any) {
              return;
           }
 
-          // Someone else can claim the split
+          // Someone else can claim the split (they only get 1 Pokemon since original took 1)
           await storage.createReservation({
             userId: user.id,
             category: categoryName,
             channelRange: range,
           });
-          await interaction.reply({ content: `You claimed the split for ${categoryName}. **Use !res (Pokemon) to reserve**.`, ephemeral: true });
+          await interaction.reply({ content: `You claimed the split for ${categoryName}. **Use !res (Pokemon) to reserve your 1 Pokemon**.`, ephemeral: true });
           if (interaction.channel instanceof TextChannel && interaction.message) {
             await updateOrgEmbed(interaction.channel, interaction.message.id);
           }
@@ -1506,9 +1548,25 @@ async function handleButton(interaction: any) {
     const sub = customId.replace('sub_', '');
     const reservation = await storage.getReservationByUser(user.id);
     if (reservation && reservation.category === 'Regionals') {
+      // Check if Standard Regional is being blocked by an existing sub-category reservation that has used !res
+      if (sub === 'none') {
+        const allReservations = await storage.getReservations();
+        const regionalReservations = allReservations.filter(r => r.category === 'Regionals');
+        const subCategoryWithRes = regionalReservations.filter(r => 
+          r.subCategory && r.subCategory !== 'standard' && r.subCategory !== 'none'
+        );
+        // Check both pokemon1 AND additionalPokemon (for galarian bird selection)
+        const anySubCategoryHasReserved = subCategoryWithRes.some(r => r.pokemon1 || r.additionalPokemon);
+        
+        if (anySubCategoryHasReserved) {
+          await interaction.reply({ content: `Standard Regionals are unavailable as somebody has already reserved a Sub Category.`, ephemeral: true });
+          return;
+        }
+      }
+      
       // Set 'standard' for Standard Regional so we can detect it (not null)
       await storage.updateReservation(reservation.id, { subCategory: sub === 'none' ? 'standard' : sub });
-      // If Galarian, prompt the user immediately to pick which bird (ephemeral)
+      // If Galarian, just confirm the selection - NO extra reserve
       if (sub === 'galarian') {
         const birdRow = new ActionRowBuilder<ButtonBuilder>()
           .addComponents(
@@ -1516,18 +1574,18 @@ async function handleButton(interaction: any) {
             new ButtonBuilder().setCustomId('galarian_bird_zapdos').setLabel('Galarian Zapdos').setStyle(ButtonStyle.Primary),
             new ButtonBuilder().setCustomId('galarian_bird_moltres').setLabel('Galarian Moltres').setStyle(ButtonStyle.Primary),
           );
-        await interaction.reply({ content: `Updated to Galarian Regionals. Please pick which Galarian bird you want (or you can still use !res to type it):`, components: [birdRow], ephemeral: true });
+        await interaction.reply({ content: `Updated to Galarian Regionals. Please pick which Galarian bird you want:`, components: [birdRow], ephemeral: true });
       } else if (sub === 'none') {
-        // Standard Regional - also show Galarian bird options
+        // Standard Regional - show Galarian bird options AND gets extra reserve via !res after
         const birdRow = new ActionRowBuilder<ButtonBuilder>()
           .addComponents(
             new ButtonBuilder().setCustomId('galarian_bird_articuno').setLabel('Galarian Articuno').setStyle(ButtonStyle.Primary),
             new ButtonBuilder().setCustomId('galarian_bird_zapdos').setLabel('Galarian Zapdos').setStyle(ButtonStyle.Primary),
             new ButtonBuilder().setCustomId('galarian_bird_moltres').setLabel('Galarian Moltres').setStyle(ButtonStyle.Primary),
           );
-        await interaction.reply({ content: `Updated to Standard Regional. Please pick a Galarian bird below:`, components: [birdRow], ephemeral: true });
+        await interaction.reply({ content: `Updated to Standard Regional. Please pick a Galarian bird below. After picking, you may use !res to select your additional reserve.`, components: [birdRow], ephemeral: true });
       } else {
-        // For Alolan and Hisuian, we explicitly tell user no extra reserve slot is available
+        // For Alolan and Hisuian - NO extra reserve slot available
         await interaction.reply({ content: `Updated sub-category to ${sub}. Note: Alolan and Hisuian subcategories do not receive a separate reserve slot.`, ephemeral: true });
       }
 
@@ -1544,6 +1602,50 @@ async function handleButton(interaction: any) {
 }
 
 async function handleSelectMenu(interaction: any) {
+  // Handle user cancel select menu (from /cancelres)
+  if (interaction.customId === 'user_cancel_select') {
+    const selected = interaction.values && interaction.values[0];
+    if (!selected) {
+      await interaction.reply({ content: "No reservation selected.", ephemeral: true });
+      return;
+    }
+
+    const id = parseInt(selected, 10);
+    const reservations = await storage.getReservations();
+    const reservation = reservations.find(r => r.id === id);
+    if (!reservation) {
+      await interaction.reply({ content: "Reservation not found or already removed.", ephemeral: true });
+      return;
+    }
+
+    // Verify the user owns this reservation
+    const userId = interaction.user.id;
+    const user = await storage.getUserByDiscordId(userId);
+    if (!user || reservation.userId !== user.id) {
+      await interaction.reply({ content: "You can only cancel your own reservations.", ephemeral: true });
+      return;
+    }
+
+    try {
+      await storage.deleteReservation(id);
+      await interaction.reply({ content: `Cancelled reservation for ${reservation.category}${reservation.subCategory ? ` (${reservation.subCategory})` : ''}.`, ephemeral: true });
+
+      // Attempt to update the main Org embed in this channel
+      if (interaction.channel instanceof TextChannel) {
+        const messages = await interaction.channel.messages.fetch({ limit: 50 });
+        const orgMessage = messages.find((m: DiscordMessage) => m.author.id === client?.user?.id && m.embeds.length > 0 && (m.embeds[0].title?.includes('Operation Incense') || m.embeds[0].title?.includes('Buyers Org')));
+        if (orgMessage) {
+          await updateOrgEmbed(interaction.channel, orgMessage.id);
+        }
+      }
+    } catch (err) {
+      console.error("Failed to delete reservation via user select:", err);
+      await interaction.reply({ content: "Failed to cancel reservation. Try again later.", ephemeral: true });
+    }
+    return;
+  }
+
+  // Handle admin cancel select menu
   if (interaction.customId !== 'admin_cancel_select') return;
 
   const selected = interaction.values && interaction.values[0];
@@ -1642,14 +1744,47 @@ async function handleMessage(message: Message) {
     let reservation = userReservations.find(r => !r.pokemon1);
     if (!reservation) reservation = userReservations[0];
 
+    // Block Alolan/Hisuian/Galarian sub-categories from using !res (they don't get extra reserve)
+    if (reservation.category === 'Regionals') {
+      const subCat = reservation.subCategory?.toLowerCase();
+      if (subCat === 'alolan' || subCat === 'hisuian' || subCat === 'galarian') {
+        // Check if they already have their Galarian bird set (for galarian only)
+        if (subCat === 'galarian' && reservation.additionalPokemon) {
+          await message.reply(`You cannot use !res for Galarian sub-category. Only Standard Regional receives an additional reserve slot.`);
+          return;
+        } else if (subCat === 'alolan' || subCat === 'hisuian') {
+          await message.reply(`You cannot use !res for ${subCat.charAt(0).toUpperCase() + subCat.slice(1)} sub-category. Only Standard Regional receives an additional reserve slot.`);
+          return;
+        }
+      }
+    }
+
     // Parse Pokemon names - split by spaces, but allow for multi-word Pokemon names
     const pokemonArray = pokemonNames.split(' ').filter(p => p.length > 0);
 
-    // For Reserve categories, MissingNo, Choice 1, and Choice 2, allow 2 Pokemon
+    // For Reserve categories, MissingNo, Choice 1, and Choice 2, allow up to 2 Pokemon
     const isReserveCategory = reservation.category.startsWith('Reserve');
     const isMissingNo = reservation.category === 'MissingNo';
     const isChoice = reservation.category === 'Choice 1' || reservation.category === 'Choice 2';
-    const maxPokemon = (isReserveCategory || isMissingNo || isChoice) ? 2 : 1;
+    
+    // Check if this is a split reservation for Reserves (second person claiming split gets only 1 Pokemon)
+    let isSplitReservation = false;
+    if (isReserveCategory) {
+      const categoryReservations = allReservations.filter(r => r.category === reservation!.category);
+      if (categoryReservations.length >= 2) {
+        // Find the OTHER reservation in this category (not the current user's)
+        const otherReservation = categoryReservations.find(r => r.userId !== reservation!.userId);
+        // This user is the split claimant if:
+        // 1. There's another person's reservation in this category
+        // 2. That person has reserved exactly 1 Pokemon (pokemon1 set, pokemon2 not set)
+        // 3. The current reservation doesn't have pokemon1 set yet (they're the split claimant)
+        if (otherReservation && otherReservation.pokemon1 && !otherReservation.pokemon2 && !reservation.pokemon1) {
+          isSplitReservation = true;
+        }
+      }
+    }
+    
+    const maxPokemon = isSplitReservation ? 1 : ((isReserveCategory || isMissingNo || isChoice) ? 2 : 1);
 
     if (pokemonArray.length > maxPokemon) {
       await message.reply(`You can only reserve up to ${maxPokemon} Pokemon for ${reservation.category}.`);
@@ -1687,9 +1822,18 @@ async function handleMessage(message: Message) {
 
     if (!reservation.pokemon1) {
       await storage.updateReservation(reservation.id, { pokemon1: pokemonName });
-      await message.reply(`Reserved ${pokemonName} for ${reservation.category}.${(isReserveCategory || isMissingNo || isChoice) ? ' You can add one more Pokemon with !res <pokemon>.' : ''}`);
+      // Show appropriate message based on category and split status
+      let extraMsg = '';
+      if (isSplitReservation) {
+        extraMsg = ''; // Split only gets 1 Pokemon, no extra message
+      } else if (isReserveCategory || isMissingNo) {
+        extraMsg = ' You can add one more Pokemon with !res <pokemon>.';
+      } else if (isChoice) {
+        extraMsg = ' You can optionally add one more Pokemon with !res <pokemon>.';
+      }
+      await message.reply(`Reserved ${pokemonName} for ${reservation.category}.${extraMsg}`);
       updated = true;
-    } else if (!reservation.pokemon2 && (isReserveCategory || isMissingNo || isChoice)) {
+    } else if (!reservation.pokemon2 && (isReserveCategory || isMissingNo || isChoice) && !isSplitReservation) {
       await storage.updateReservation(reservation.id, { pokemon2: pokemonName });
       await message.reply(`Reserved second Pokemon ${pokemonName} for ${reservation.category}.`);
       updated = true;
@@ -1712,8 +1856,8 @@ async function handleMessage(message: Message) {
       await message.reply(`You already have reservations for this category.`);
     }
   } 
-  // Handle double Pokemon reservation (for Reserve categories, MissingNo, and Choice)
-  else if (pokemonArray.length === 2 && (isReserveCategory || isMissingNo || isChoice)) {
+  // Handle double Pokemon reservation (for Reserve categories, MissingNo, and Choice - but NOT for splits)
+  else if (pokemonArray.length === 2 && (isReserveCategory || isMissingNo || isChoice) && !isSplitReservation) {
     const [pokemon1, pokemon2] = pokemonArray;
 
     if (!reservation.pokemon1) {
