@@ -1645,9 +1645,10 @@ async function handleMessage(message: Message) {
     // Parse Pokemon names - split by spaces, but allow for multi-word Pokemon names
     const pokemonArray = pokemonNames.split(' ').filter(p => p.length > 0);
 
-    // For Reserve categories, allow 1 or 2 Pokemon
+    // For Reserve categories and MissingNo, allow 2 Pokemon
     const isReserveCategory = reservation.category.startsWith('Reserve');
-    const maxPokemon = isReserveCategory ? 2 : 1;
+    const isMissingNo = reservation.category === 'MissingNo';
+    const maxPokemon = (isReserveCategory || isMissingNo) ? 2 : 1;
 
     if (pokemonArray.length > maxPokemon) {
       await message.reply(`You can only reserve up to ${maxPokemon} Pokemon for ${reservation.category}.`);
