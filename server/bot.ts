@@ -1613,56 +1613,84 @@ async function handleButton(interaction: any) {
   // Handle Sub-category
   if (customId.startsWith('sub_')) {
     const sub = customId.replace('sub_', '');
-    const reservation = await storage.getReservationByUser(user.id);
-    if (reservation && reservation.category === 'Regionals') {
-      // Check if Standard Regional is being blocked by an existing sub-category reservation that has used !res
-      if (sub === 'none') {
-        const allReservations = await storage.getReservations();
-        const regionalReservations = allReservations.filter(r => r.category === 'Regionals');
-        const subCategoryWithRes = regionalReservations.filter(r => 
-          r.subCategory && r.subCategory !== 'standard' && r.subCategory !== 'none'
-        );
-        // Check both pokemon1 AND additionalPokemon (for galarian bird selection)
-        const anySubCategoryHasReserved = subCategoryWithRes.some(r => r.pokemon1 || r.additionalPokemon);
-        
-        if (anySubCategoryHasReserved) {
-          await interaction.reply({ content: `Standard Regionals are unavailable as somebody has already reserved a Sub Category.`, ephemeral: true });
-          return;
-        }
+    
+    // Get all reservations and find user's REGIONAL reservation specifically (not just most recent)
+    const allReservations = await storage.getReservations();
+    const regionalReservations = allReservations.filter(r => r.category === 'Regionals');
+    const userRegionalReservation = regionalReservations.find(r => r.user.discordId === interaction.user.id && !r.subCategory);
+    
+    if (!userRegionalReservation) {
+      await interaction.reply({ content: "No pending Regional reservation found. Please click the Regionals category button first.", ephemeral: true });
+      return;
+    }
+    
+    // Check if the selected sub-category is already taken
+    const takenSubcategories = regionalReservations
+      .filter(r => r.subCategory)
+      .map(r => r.subCategory?.toLowerCase())
+      .filter(Boolean);
+    
+    if (sub !== 'none' && takenSubcategories.includes(sub.toLowerCase())) {
+      await interaction.reply({ content: `The ${sub} subcategory is already taken. Please choose a different one.`, ephemeral: true });
+      return;
+    }
+    
+    // Check if Standard Regional has picked their bird - blocks ALL sub-categories
+    const standardHolder = regionalReservations.find(r => r.subCategory === 'standard' || r.subCategory === 'none');
+    if (standardHolder && standardHolder.additionalPokemon && sub !== 'none') {
+      await interaction.reply({ content: `All Regional sub-categories are locked because Standard Regional has already selected their Galarian bird.`, ephemeral: true });
+      return;
+    }
+    
+    // Check if Standard Regional is being blocked by an existing sub-category reservation that has used !res
+    if (sub === 'none') {
+      const subCategoryWithRes = regionalReservations.filter(r => 
+        r.subCategory && r.subCategory !== 'standard' && r.subCategory !== 'none'
+      );
+      // Check both pokemon1 AND additionalPokemon (for galarian bird selection)
+      const anySubCategoryHasReserved = subCategoryWithRes.some(r => r.pokemon1 || r.additionalPokemon);
+      
+      if (anySubCategoryHasReserved) {
+        await interaction.reply({ content: `Standard Regionals are unavailable as somebody has already reserved a Sub Category.`, ephemeral: true });
+        return;
       }
       
-      // Set 'standard' for Standard Regional so we can detect it (not null)
-      await storage.updateReservation(reservation.id, { subCategory: sub === 'none' ? 'standard' : sub });
-      // If Galarian, just confirm the selection - NO extra reserve
-      if (sub === 'galarian') {
-        const birdRow = new ActionRowBuilder<ButtonBuilder>()
-          .addComponents(
-            new ButtonBuilder().setCustomId('galarian_bird_articuno').setLabel('Galarian Articuno').setStyle(ButtonStyle.Primary),
-            new ButtonBuilder().setCustomId('galarian_bird_zapdos').setLabel('Galarian Zapdos').setStyle(ButtonStyle.Primary),
-            new ButtonBuilder().setCustomId('galarian_bird_moltres').setLabel('Galarian Moltres').setStyle(ButtonStyle.Primary),
-          );
-        await interaction.reply({ content: `Updated to Galarian Regionals. Please pick which Galarian bird you want:`, components: [birdRow], ephemeral: true });
-      } else if (sub === 'none') {
-        // Standard Regional - show Galarian bird options AND gets extra reserve via !res after
-        const birdRow = new ActionRowBuilder<ButtonBuilder>()
-          .addComponents(
-            new ButtonBuilder().setCustomId('galarian_bird_articuno').setLabel('Galarian Articuno').setStyle(ButtonStyle.Primary),
-            new ButtonBuilder().setCustomId('galarian_bird_zapdos').setLabel('Galarian Zapdos').setStyle(ButtonStyle.Primary),
-            new ButtonBuilder().setCustomId('galarian_bird_moltres').setLabel('Galarian Moltres').setStyle(ButtonStyle.Primary),
-          );
-        await interaction.reply({ content: `Updated to Standard Regional. Please pick a Galarian bird below. After picking, you may use !res to select your additional reserve.`, components: [birdRow], ephemeral: true });
-      } else {
-        // For Alolan and Hisuian - NO extra reserve slot available
-        await interaction.reply({ content: `Updated sub-category to ${sub}. Note: Alolan and Hisuian subcategories do not receive a separate reserve slot.`, ephemeral: true });
+      // Also check if Standard is already taken
+      if (takenSubcategories.includes('standard')) {
+        await interaction.reply({ content: `Standard Regional is already taken.`, ephemeral: true });
+        return;
       }
-
-      // Update the main embed if we can find it (this is trickier with ephemeral replies, 
-      // but usually the interaction message is the one with buttons)
-      if (interaction.channel instanceof TextChannel && interaction.message) {
-        await updateOrgEmbed(interaction.channel, interaction.message.id);
-      }
+    }
+    
+    // Set 'standard' for Standard Regional so we can detect it (not null)
+    await storage.updateReservation(userRegionalReservation.id, { subCategory: sub === 'none' ? 'standard' : sub });
+    
+    // If Galarian, just confirm the selection - NO extra reserve
+    if (sub === 'galarian') {
+      const birdRow = new ActionRowBuilder<ButtonBuilder>()
+        .addComponents(
+          new ButtonBuilder().setCustomId('galarian_bird_articuno').setLabel('Galarian Articuno').setStyle(ButtonStyle.Primary),
+          new ButtonBuilder().setCustomId('galarian_bird_zapdos').setLabel('Galarian Zapdos').setStyle(ButtonStyle.Primary),
+          new ButtonBuilder().setCustomId('galarian_bird_moltres').setLabel('Galarian Moltres').setStyle(ButtonStyle.Primary),
+        );
+      await interaction.reply({ content: `Updated to Galarian Regionals. Please pick which Galarian bird you want:`, components: [birdRow], ephemeral: true });
+    } else if (sub === 'none') {
+      // Standard Regional - show Galarian bird options AND gets extra reserve via !res after
+      const birdRow = new ActionRowBuilder<ButtonBuilder>()
+        .addComponents(
+          new ButtonBuilder().setCustomId('galarian_bird_articuno').setLabel('Galarian Articuno').setStyle(ButtonStyle.Primary),
+          new ButtonBuilder().setCustomId('galarian_bird_zapdos').setLabel('Galarian Zapdos').setStyle(ButtonStyle.Primary),
+          new ButtonBuilder().setCustomId('galarian_bird_moltres').setLabel('Galarian Moltres').setStyle(ButtonStyle.Primary),
+        );
+      await interaction.reply({ content: `Updated to Standard Regional. Please pick a Galarian bird below. After picking, you may use !res to select your additional reserve.`, components: [birdRow], ephemeral: true });
     } else {
-      await interaction.reply({ content: "No active Regional reservation found.", ephemeral: true });
+      // For Alolan and Hisuian - NO extra reserve slot available
+      await interaction.reply({ content: `Updated sub-category to ${sub}. Note: Alolan and Hisuian subcategories do not receive a separate reserve slot.`, ephemeral: true });
+    }
+
+    // Update the main embed if we can find it
+    if (interaction.channel instanceof TextChannel && interaction.message) {
+      await updateOrgEmbed(interaction.channel, interaction.message.id);
     }
     return;
   }
