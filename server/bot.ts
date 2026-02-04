@@ -1181,7 +1181,7 @@ async function handleButton(interaction: any) {
     }
 
     await storage.updateReservation(reservation.id, { additionalPokemon: choice });
-    await interaction.reply({ content: `Set your Gigantamax Rare choice to ${choice}.`, ephemeral: true });
+    await interaction.reply({ content: `Set your Gigantamax Rare choice to ${choice}. **You may now use !res to select your additional reserve**.`, ephemeral: true });
 
     // update embed if present
     if (interaction.channel instanceof TextChannel) {
@@ -1216,7 +1216,7 @@ async function handleButton(interaction: any) {
     }
 
     await storage.updateReservation(reservation.id, { additionalPokemon: choice });
-    await interaction.reply({ content: `Set your Galarian bird choice to ${choice}.`, ephemeral: true });
+    await interaction.reply({ content: `Set your Galarian bird choice to ${choice}. **You may now use !res to select your additional reserve**.`, ephemeral: true });
 
     // update embed if present
     if (interaction.channel instanceof TextChannel) {
@@ -1474,7 +1474,7 @@ async function handleButton(interaction: any) {
             new ButtonBuilder().setCustomId('gmax_pick_eternatus').setLabel('Eternatus').setStyle(ButtonStyle.Primary),
           );
         await interaction.reply({ 
-          content: `You selected ${categoryName}. Choose your Gigantamax Rare, then **use !res (Pokemon) to reserve your Gmax**:`, 
+          content: `You selected ${categoryName}. Please pick your Gigantamax Rare below:`, 
           components: [gmaxRow], 
           ephemeral: true 
         });
@@ -1525,7 +1525,7 @@ async function handleButton(interaction: any) {
             new ButtonBuilder().setCustomId('galarian_bird_zapdos').setLabel('Galarian Zapdos').setStyle(ButtonStyle.Primary),
             new ButtonBuilder().setCustomId('galarian_bird_moltres').setLabel('Galarian Moltres').setStyle(ButtonStyle.Primary),
           );
-        await interaction.reply({ content: `Updated to Standard Regional. You can pick a Galarian bird below, or **use !res to add your pokemon**:`, components: [birdRow], ephemeral: true });
+        await interaction.reply({ content: `Updated to Standard Regional. Please pick a Galarian bird below:`, components: [birdRow], ephemeral: true });
       } else {
         // For Alolan and Hisuian, we explicitly tell user no extra reserve slot is available
         await interaction.reply({ content: `Updated sub-category to ${sub}. Note: Alolan and Hisuian subcategories do not receive a separate reserve slot.`, ephemeral: true });
@@ -1645,10 +1645,11 @@ async function handleMessage(message: Message) {
     // Parse Pokemon names - split by spaces, but allow for multi-word Pokemon names
     const pokemonArray = pokemonNames.split(' ').filter(p => p.length > 0);
 
-    // For Reserve categories and MissingNo, allow 2 Pokemon
+    // For Reserve categories, MissingNo, Choice 1, and Choice 2, allow 2 Pokemon
     const isReserveCategory = reservation.category.startsWith('Reserve');
     const isMissingNo = reservation.category === 'MissingNo';
-    const maxPokemon = (isReserveCategory || isMissingNo) ? 2 : 1;
+    const isChoice = reservation.category === 'Choice 1' || reservation.category === 'Choice 2';
+    const maxPokemon = (isReserveCategory || isMissingNo || isChoice) ? 2 : 1;
 
     if (pokemonArray.length > maxPokemon) {
       await message.reply(`You can only reserve up to ${maxPokemon} Pokemon for ${reservation.category}.`);
@@ -1686,9 +1687,9 @@ async function handleMessage(message: Message) {
 
     if (!reservation.pokemon1) {
       await storage.updateReservation(reservation.id, { pokemon1: pokemonName });
-      await message.reply(`Reserved ${pokemonName} for ${reservation.category}.${(isReserveCategory || isMissingNo) ? ' You can add one more Pokemon with !res <pokemon>.' : ''}`);
+      await message.reply(`Reserved ${pokemonName} for ${reservation.category}.${(isReserveCategory || isMissingNo || isChoice) ? ' You can add one more Pokemon with !res <pokemon>.' : ''}`);
       updated = true;
-    } else if (!reservation.pokemon2 && (isReserveCategory || isMissingNo)) {
+    } else if (!reservation.pokemon2 && (isReserveCategory || isMissingNo || isChoice)) {
       await storage.updateReservation(reservation.id, { pokemon2: pokemonName });
       await message.reply(`Reserved second Pokemon ${pokemonName} for ${reservation.category}.`);
       updated = true;
@@ -1711,8 +1712,8 @@ async function handleMessage(message: Message) {
       await message.reply(`You already have reservations for this category.`);
     }
   } 
-  // Handle double Pokemon reservation (for Reserve categories and MissingNo)
-  else if (pokemonArray.length === 2 && (isReserveCategory || isMissingNo)) {
+  // Handle double Pokemon reservation (for Reserve categories, MissingNo, and Choice)
+  else if (pokemonArray.length === 2 && (isReserveCategory || isMissingNo || isChoice)) {
     const [pokemon1, pokemon2] = pokemonArray;
 
     if (!reservation.pokemon1) {
