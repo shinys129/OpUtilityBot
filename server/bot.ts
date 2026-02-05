@@ -18,6 +18,7 @@ const CATEGORIES = {
   RESERVE2: { name: 'Reserve 2', range: '93-96' },
   RESERVE3: { name: 'Reserve 3', range: '97-100' },
   BOOSTER: { name: 'Server Booster Reserves', range: 'N/A' },
+  STAFF: { name: 'Staff Reserve', range: 'N/A' },
 };
 
 let client: Client | null = null;
@@ -192,9 +193,14 @@ async function buildCategoryButtons(reservations: any[]): Promise<ActionRowBuild
       return owners.length >= 1;
     }
     if (catKey.toLowerCase() === 'booster') {
-      // Server Booster allows 2 people with 1 Pokemon each
+      // Server Booster allows 2 people with 1 Pokemon each (unless staff who can have 2)
       const categoryReservations = reservations.filter(r => r.category === 'Server Booster Reserves');
       return categoryReservations.length >= 2;
+    }
+    if (catKey.toLowerCase() === 'staff') {
+      // Staff Reserve - only 1 staff member can claim, they get up to 2 Pokemon
+      const categoryReservations = reservations.filter(r => r.category === 'Staff Reserve');
+      return categoryReservations.length >= 1;
     }
     return owners.length >= 1;
   };
@@ -211,6 +217,14 @@ async function buildCategoryButtons(reservations: any[]): Promise<ActionRowBuild
       // If 1 person has claimed (split available)
       if (categoryReservations.length === 1) {
         return `${baseName} - SPLIT`;
+      }
+      return baseName;
+    }
+    
+    if (catKey.toLowerCase() === 'staff') {
+      const categoryReservations = reservations.filter(r => r.category === 'Staff Reserve');
+      if (categoryReservations.length >= 1) {
+        return `${baseName} - ${categoryReservations[0].user.username}`;
       }
       return baseName;
     }
@@ -306,6 +320,11 @@ async function buildCategoryButtons(reservations: any[]): Promise<ActionRowBuild
         .setLabel(getLabel('booster', 'Server Booster Reserves', 'N/A'))
         .setStyle(isLocked('booster') ? ButtonStyle.Secondary : ButtonStyle.Primary)
         .setDisabled(isLocked('booster')),
+      new ButtonBuilder()
+        .setCustomId('cat_staff')
+        .setLabel(getLabel('staff', 'Staff Reserve', 'N/A'))
+        .setStyle(isLocked('staff') ? ButtonStyle.Secondary : ButtonStyle.Danger)
+        .setDisabled(isLocked('staff')),
     );
 
   const adminRow = new ActionRowBuilder<ButtonBuilder>()
@@ -358,8 +377,8 @@ async function updateOrgEmbed(channel: TextChannel, messageId: string) {
   const checks = await storage.getChannelChecks();
 
   const totalReservations = reservations.length;
-  const totalCategories = Object.keys(CATEGORIES).filter(k => k !== 'BOOSTER').length;
-  const filledCategories = new Set(reservations.filter(r => r.category !== 'Server Booster Reserves').map(r => r.category)).size;
+  const totalCategories = Object.keys(CATEGORIES).filter(k => k !== 'BOOSTER' && k !== 'STAFF').length;
+  const filledCategories = new Set(reservations.filter(r => r.category !== 'Server Booster Reserves' && r.category !== 'Staff Reserve').map(r => r.category)).size;
 
   const embed = new EmbedBuilder()
     .setTitle('⚡ Operation Incense Buyers Org')
@@ -482,8 +501,8 @@ async function handleSlashCommand(interaction: any) {
     const checks = await storage.getChannelChecks();
     
     const totalReservations = reservations.length;
-    const totalCategories = Object.keys(CATEGORIES).filter(k => k !== 'BOOSTER').length;
-    const filledCategories = new Set(reservations.filter(r => r.category !== 'Server Booster Reserves').map(r => r.category)).size;
+    const totalCategories = Object.keys(CATEGORIES).filter(k => k !== 'BOOSTER' && k !== 'STAFF').length;
+    const filledCategories = new Set(reservations.filter(r => r.category !== 'Server Booster Reserves' && r.category !== 'Staff Reserve').map(r => r.category)).size;
 
     const embed = new EmbedBuilder()
       .setTitle('⚡ Operation Incense Buyers Org')
@@ -635,8 +654,8 @@ async function handleSlashCommand(interaction: any) {
       const checks = await storage.getChannelChecks();
       
       const totalReservations = reservations.length;
-      const totalCategories = Object.keys(CATEGORIES).filter(k => k !== 'BOOSTER').length;
-      const filledCategories = new Set(reservations.filter(r => r.category !== 'Server Booster Reserves').map(r => r.category)).size;
+      const totalCategories = Object.keys(CATEGORIES).filter(k => k !== 'BOOSTER' && k !== 'STAFF').length;
+      const filledCategories = new Set(reservations.filter(r => r.category !== 'Server Booster Reserves' && r.category !== 'Staff Reserve').map(r => r.category)).size;
 
       // Build the full embed with all reservation data
       const embed = new EmbedBuilder()
@@ -731,12 +750,12 @@ async function handleSlashCommand(interaction: any) {
     }
   }
 
-  // New: /cancelres - cancel the user's reservation (with category selection if multiple)
+  // New: /cancelres - show options to change reserve or fully cancel
   if (interaction.commandName === 'cancelres') {
     const discordId = interaction.user.id;
     const user = await storage.getUserByDiscordId(discordId);
     if (!user) {
-      await interaction.reply({ content: "You have no reservations to cancel.", ephemeral: true });
+      await interaction.reply({ content: "You have no reservations to manage.", ephemeral: true });
       return;
     }
 
@@ -749,44 +768,29 @@ async function handleSlashCommand(interaction: any) {
       return;
     }
 
-    // If user has multiple reservations, show a selection menu
-    if (userReservations.length > 1) {
-      const options = userReservations.map(r => ({
+    // Build options for each reservation with change/cancel buttons
+    const options = userReservations.map(r => {
+      const pokemonList = [r.pokemon1, r.pokemon2, r.additionalPokemon].filter(Boolean).join(', ');
+      return {
         label: `${r.category}${r.subCategory ? ` (${r.subCategory})` : ''}`,
-        description: r.pokemon1 ? `${r.pokemon1}${r.pokemon2 ? `, ${r.pokemon2}` : ''}` : 'No pokemon reserved',
+        description: pokemonList || 'No pokemon reserved',
         value: String(r.id),
-      }));
+      };
+    });
 
-      const select = new StringSelectMenuBuilder()
-        .setCustomId('user_cancel_select')
-        .setPlaceholder('Select which reservation to cancel')
-        .addOptions(options)
-        .setMinValues(1)
-        .setMaxValues(1);
+    const select = new StringSelectMenuBuilder()
+      .setCustomId('user_manage_select')
+      .setPlaceholder('Select a reservation to manage')
+      .addOptions(options)
+      .setMinValues(1)
+      .setMaxValues(1);
 
-      const row = new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(select);
-      await interaction.reply({ content: "You have multiple reservations. Select which one to cancel:", components: [row], ephemeral: true });
-      return;
-    }
-
-    // If only one reservation, cancel it directly
-    const reservation = userReservations[0];
-    try {
-      await storage.deleteReservation(reservation.id);
-      await interaction.reply({ content: `Cancelled reservation for ${reservation.category}.`, ephemeral: true });
-
-      // Attempt to update the main Org embed in this channel
-      if (interaction.channel instanceof TextChannel) {
-        const messages = await interaction.channel.messages.fetch({ limit: 50 });
-        const orgMessage = messages.find((m: DiscordMessage) => m.author.id === client?.user?.id && m.embeds.length > 0 && m.embeds[0].title && (m.embeds[0].title.includes('Operation Incense') || m.embeds[0].title.includes('Buyers Org')));
-        if (orgMessage) {
-          await updateOrgEmbed(interaction.channel, orgMessage.id);
-        }
-      }
-    } catch (err) {
-      console.error("Failed to delete reservation:", err);
-      await interaction.reply({ content: "Failed to cancel reservation. Try again later.", ephemeral: true });
-    }
+    const row = new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(select);
+    await interaction.reply({ 
+      content: "Select a reservation to manage. You can change your Pokemon selection or fully cancel it:", 
+      components: [row], 
+      ephemeral: true 
+    });
   }
 
   // New: /endorg - admin only: close the embed and clear reservations/checks
@@ -1464,12 +1468,59 @@ async function handleButton(interaction: any) {
       // For all other categories (including Gmax and Reserves)
       const categoryReservations = existingReservations.filter(r => r.category === categoryName);
       
-      // Special logic for Server Booster Reserves: require booster role, allow 2 people with 1 Pokemon each
+      // Special logic for Staff Reserve: only staff role can claim, up to 2 Pokemon
+      if (categoryName === 'Staff Reserve') {
+        const member = await interaction.guild?.members.fetch(userId);
+        if (!member?.roles.cache.has(ADMIN_ROLE_ID)) {
+          await interaction.reply({ content: `Only staff members can claim this category.`, ephemeral: true });
+          return;
+        }
+        
+        // Check if already claimed
+        if (categoryReservations.length >= 1) {
+          const alreadyClaimedByUser = categoryReservations.find(r => r.user.discordId === userId);
+          if (alreadyClaimedByUser) {
+            await interaction.reply({ content: `You already have a Staff Reserve. Use !res (Pokemon Pokemon) to reserve up to 2 Pokemon.`, ephemeral: true });
+          } else {
+            await interaction.reply({ content: `Staff Reserve is already claimed by ${categoryReservations[0].user.username}.`, ephemeral: true });
+          }
+          return;
+        }
+        
+        // Create reservation
+        await storage.createReservation({
+          userId: user.id,
+          category: categoryName,
+          channelRange: range,
+        });
+        
+        await interaction.reply({ content: `You claimed Staff Reserve. Use !res (Pokemon Pokemon) to reserve up to 2 Pokemon.`, ephemeral: true });
+        
+        if (interaction.channel instanceof TextChannel && interaction.message) {
+          await updateOrgEmbed(interaction.channel, interaction.message.id);
+        }
+        return;
+      }
+      
+      // Special logic for Server Booster Reserves: require booster role, only after other categories taken
       if (categoryName === 'Server Booster Reserves') {
         const BOOSTER_ROLE_ID = '1405333965933383772';
         const member = await interaction.guild?.members.fetch(userId);
-        if (!member?.roles.cache.has(BOOSTER_ROLE_ID)) {
+        const isStaff = member?.roles.cache.has(ADMIN_ROLE_ID);
+        
+        if (!member?.roles.cache.has(BOOSTER_ROLE_ID) && !isStaff) {
           await interaction.reply({ content: `You must have the Server Booster role to claim this category.`, ephemeral: true });
+          return;
+        }
+        
+        // Check if other categories are filled first (excluding Booster and Staff)
+        const mainCategories = Object.entries(CATEGORIES)
+          .filter(([key]) => key !== 'BOOSTER' && key !== 'STAFF')
+          .map(([_, cat]) => cat.name);
+        const filledCategories = new Set(existingReservations.filter(r => mainCategories.includes(r.category)).map(r => r.category));
+        
+        if (filledCategories.size < mainCategories.length) {
+          await interaction.reply({ content: `Server Booster Reserves can only be claimed after all other categories are taken.`, ephemeral: true });
           return;
         }
         
@@ -1491,14 +1542,16 @@ async function handleButton(interaction: any) {
           return;
         }
         
-        // Create reservation (1 Pokemon allowed per person)
+        // Create reservation - staff can have 2 Pokemon, others only 1
         await storage.createReservation({
           userId: user.id,
           category: categoryName,
           channelRange: range,
         });
         
-        if (categoryReservations.length === 0) {
+        if (isStaff) {
+          await interaction.reply({ content: `You claimed Server Booster Reserves as staff. Use !res (Pokemon Pokemon) to reserve up to 2 Pokemon. One more booster can also claim this category.`, ephemeral: true });
+        } else if (categoryReservations.length === 0) {
           await interaction.reply({ content: `You claimed Server Booster Reserves. Use !res (Pokemon) to reserve your Pokemon. One more booster can also claim this category.`, ephemeral: true });
         } else {
           await interaction.reply({ content: `You claimed the split for Server Booster Reserves. Use !res (Pokemon) to reserve your Pokemon.`, ephemeral: true });
@@ -1600,7 +1653,7 @@ async function handleButton(interaction: any) {
       
       // Check if all non-booster categories are filled and send announcement
       const allReservations = await storage.getReservations();
-      const totalCategories = Object.keys(CATEGORIES).filter(k => k !== 'BOOSTER').length;
+      const totalCategories = Object.keys(CATEGORIES).filter(k => k !== 'BOOSTER' && k !== 'STAFF').length;
       const filledCategories = new Set(allReservations.filter(r => r.category !== 'Server Booster Reserves').map(r => r.category)).size;
       
       if (filledCategories === totalCategories) {
@@ -1694,11 +1747,180 @@ async function handleButton(interaction: any) {
     }
     return;
   }
+  
+  // Handle user change reserve button (from /cancelres)
+  if (customId.startsWith('user_change_reserve_')) {
+    const id = parseInt(customId.replace('user_change_reserve_', ''), 10);
+    const reservations = await storage.getReservations();
+    const reservation = reservations.find(r => r.id === id);
+    
+    if (!reservation) {
+      await interaction.reply({ content: "Reservation not found.", ephemeral: true });
+      return;
+    }
+    
+    // Verify ownership
+    const userId = interaction.user.id;
+    const user = await storage.getUserByDiscordId(userId);
+    if (!user || reservation.userId !== user.id) {
+      await interaction.reply({ content: "You can only change your own reservations.", ephemeral: true });
+      return;
+    }
+    
+    // Clear the Pokemon fields but keep the category
+    await storage.updateReservation(id, { pokemon1: null, pokemon2: null, additionalPokemon: null });
+    
+    await interaction.reply({ 
+      content: `Your Pokemon selection for **${reservation.category}${reservation.subCategory ? ` (${reservation.subCategory})` : ''}** has been cleared. Use **!res** to choose new Pokemon.`, 
+      ephemeral: true 
+    });
+    
+    // Update the org embed
+    if (interaction.channel instanceof TextChannel) {
+      const messages = await interaction.channel.messages.fetch({ limit: 50 });
+      const orgMessage = messages.find((m: DiscordMessage) => m.author.id === client?.user?.id && m.embeds.length > 0 && (m.embeds[0].title?.includes('Operation Incense') || m.embeds[0].title?.includes('Buyers Org')));
+      if (orgMessage) {
+        await updateOrgEmbed(interaction.channel, orgMessage.id);
+      }
+    }
+    return;
+  }
+  
+  // Handle admin clear pokemon button (keep category, notify user)
+  if (customId.startsWith('admin_clear_pokemon_')) {
+    // Verify admin permissions
+    let isAdmin = false;
+    const dbAdminRoleId = await storage.getAdminRole();
+    const member = interaction.member;
+    if (member && member.permissions && member.permissions.has && member.permissions.has(PermissionFlagsBits.ManageGuild)) {
+      isAdmin = true;
+    } else if (member && member.roles && member.roles.cache && member.roles.cache.has(ADMIN_ROLE_ID)) {
+      isAdmin = true;
+    } else if (member && dbAdminRoleId && member.roles && member.roles.cache && member.roles.cache.has(dbAdminRoleId)) {
+      isAdmin = true;
+    }
+    
+    if (!isAdmin) {
+      await interaction.reply({ content: "Only admins can manage reservations.", ephemeral: true });
+      return;
+    }
+    
+    const id = parseInt(customId.replace('admin_clear_pokemon_', ''), 10);
+    const reservations = await storage.getReservations();
+    const reservation = reservations.find(r => r.id === id);
+    
+    if (!reservation) {
+      await interaction.reply({ content: "Reservation not found.", ephemeral: true });
+      return;
+    }
+    
+    // Clear the Pokemon fields but keep the category
+    await storage.updateReservation(id, { pokemon1: null, pokemon2: null, additionalPokemon: null });
+    
+    await interaction.reply({ 
+      content: `Cleared Pokemon selection for **${reservation.user.username}** (${reservation.category}). They have been notified to choose new Pokemon.`, 
+      ephemeral: true 
+    });
+    
+    // Notify the user in the channel
+    if (interaction.channel instanceof TextChannel) {
+      await interaction.channel.send(`<@${reservation.user.discordId}> Your reserve for **${reservation.category}${reservation.subCategory ? ` (${reservation.subCategory})` : ''}** has been modified by staff. Please use **!res** to choose a new Pokemon.`);
+      
+      // Update the org embed
+      const messages = await interaction.channel.messages.fetch({ limit: 50 });
+      const orgMessage = messages.find((m: DiscordMessage) => m.author.id === client?.user?.id && m.embeds.length > 0 && (m.embeds[0].title?.includes('Operation Incense') || m.embeds[0].title?.includes('Buyers Org')));
+      if (orgMessage) {
+        await updateOrgEmbed(interaction.channel, orgMessage.id);
+      }
+    }
+    return;
+  }
+  
+  // Handle admin full cancel button
+  if (customId.startsWith('admin_full_cancel_')) {
+    // Verify admin permissions
+    let isAdmin = false;
+    const dbAdminRoleId = await storage.getAdminRole();
+    const member = interaction.member;
+    if (member && member.permissions && member.permissions.has && member.permissions.has(PermissionFlagsBits.ManageGuild)) {
+      isAdmin = true;
+    } else if (member && member.roles && member.roles.cache && member.roles.cache.has(ADMIN_ROLE_ID)) {
+      isAdmin = true;
+    } else if (member && dbAdminRoleId && member.roles && member.roles.cache && member.roles.cache.has(dbAdminRoleId)) {
+      isAdmin = true;
+    }
+    
+    if (!isAdmin) {
+      await interaction.reply({ content: "Only admins can manage reservations.", ephemeral: true });
+      return;
+    }
+    
+    const id = parseInt(customId.replace('admin_full_cancel_', ''), 10);
+    const reservations = await storage.getReservations();
+    const reservation = reservations.find(r => r.id === id);
+    
+    if (!reservation) {
+      await interaction.reply({ content: "Reservation not found.", ephemeral: true });
+      return;
+    }
+    
+    await storage.deleteReservation(id);
+    await interaction.reply({ 
+      content: `Cancelled reservation for **${reservation.user.username}** (${reservation.category}).`, 
+      ephemeral: true 
+    });
+    
+    // Update the org embed
+    if (interaction.channel instanceof TextChannel) {
+      const messages = await interaction.channel.messages.fetch({ limit: 50 });
+      const orgMessage = messages.find((m: DiscordMessage) => m.author.id === client?.user?.id && m.embeds.length > 0 && (m.embeds[0].title?.includes('Operation Incense') || m.embeds[0].title?.includes('Buyers Org')));
+      if (orgMessage) {
+        await updateOrgEmbed(interaction.channel, orgMessage.id);
+      }
+    }
+    return;
+  }
+  
+  // Handle user full cancel button (from /cancelres)
+  if (customId.startsWith('user_full_cancel_')) {
+    const id = parseInt(customId.replace('user_full_cancel_', ''), 10);
+    const reservations = await storage.getReservations();
+    const reservation = reservations.find(r => r.id === id);
+    
+    if (!reservation) {
+      await interaction.reply({ content: "Reservation not found.", ephemeral: true });
+      return;
+    }
+    
+    // Verify ownership
+    const userId = interaction.user.id;
+    const user = await storage.getUserByDiscordId(userId);
+    if (!user || reservation.userId !== user.id) {
+      await interaction.reply({ content: "You can only cancel your own reservations.", ephemeral: true });
+      return;
+    }
+    
+    await storage.deleteReservation(id);
+    await interaction.reply({ 
+      content: `Cancelled reservation for **${reservation.category}${reservation.subCategory ? ` (${reservation.subCategory})` : ''}**.`, 
+      ephemeral: true 
+    });
+    
+    // Update the org embed
+    if (interaction.channel instanceof TextChannel) {
+      const messages = await interaction.channel.messages.fetch({ limit: 50 });
+      const orgMessage = messages.find((m: DiscordMessage) => m.author.id === client?.user?.id && m.embeds.length > 0 && (m.embeds[0].title?.includes('Operation Incense') || m.embeds[0].title?.includes('Buyers Org')));
+      if (orgMessage) {
+        await updateOrgEmbed(interaction.channel, orgMessage.id);
+      }
+    }
+    return;
+  }
 }
 
 async function handleSelectMenu(interaction: any) {
-  // Handle user cancel select menu (from /cancelres)
-  if (interaction.customId === 'user_cancel_select') {
+  // Handle user manage select menu (from /cancelres)
+  if (interaction.customId === 'user_manage_select') {
     const selected = interaction.values && interaction.values[0];
     if (!selected) {
       await interaction.reply({ content: "No reservation selected.", ephemeral: true });
@@ -1717,61 +1939,72 @@ async function handleSelectMenu(interaction: any) {
     const userId = interaction.user.id;
     const user = await storage.getUserByDiscordId(userId);
     if (!user || reservation.userId !== user.id) {
-      await interaction.reply({ content: "You can only cancel your own reservations.", ephemeral: true });
+      await interaction.reply({ content: "You can only manage your own reservations.", ephemeral: true });
       return;
     }
 
-    try {
-      await storage.deleteReservation(id);
-      await interaction.reply({ content: `Cancelled reservation for ${reservation.category}${reservation.subCategory ? ` (${reservation.subCategory})` : ''}.`, ephemeral: true });
+    // Show buttons for change reserve or full cancel
+    const hasPokemon = reservation.pokemon1 || reservation.pokemon2 || reservation.additionalPokemon;
+    const buttonRow = new ActionRowBuilder<ButtonBuilder>()
+      .addComponents(
+        new ButtonBuilder()
+          .setCustomId(`user_change_reserve_${id}`)
+          .setLabel('Change Reserve')
+          .setStyle(ButtonStyle.Primary)
+          .setDisabled(!hasPokemon), // Disable if no Pokemon to change
+        new ButtonBuilder()
+          .setCustomId(`user_full_cancel_${id}`)
+          .setLabel('Full Cancel')
+          .setStyle(ButtonStyle.Danger),
+      );
 
-      // Attempt to update the main Org embed in this channel
-      if (interaction.channel instanceof TextChannel) {
-        const messages = await interaction.channel.messages.fetch({ limit: 50 });
-        const orgMessage = messages.find((m: DiscordMessage) => m.author.id === client?.user?.id && m.embeds.length > 0 && (m.embeds[0].title?.includes('Operation Incense') || m.embeds[0].title?.includes('Buyers Org')));
-        if (orgMessage) {
-          await updateOrgEmbed(interaction.channel, orgMessage.id);
-        }
-      }
-    } catch (err) {
-      console.error("Failed to delete reservation via user select:", err);
-      await interaction.reply({ content: "Failed to cancel reservation. Try again later.", ephemeral: true });
-    }
+    const pokemonList = [reservation.pokemon1, reservation.pokemon2, reservation.additionalPokemon].filter(Boolean).join(', ');
+    await interaction.reply({ 
+      content: `**${reservation.category}${reservation.subCategory ? ` (${reservation.subCategory})` : ''}**\nPokemon: ${pokemonList || 'None'}\n\n**Change Reserve** - Clear your Pokemon selection and choose new ones with !res\n**Full Cancel** - Remove your entire reservation`, 
+      components: [buttonRow], 
+      ephemeral: true 
+    });
     return;
   }
 
   // Handle admin cancel select menu
-  if (interaction.customId !== 'admin_cancel_select') return;
-
-  const selected = interaction.values && interaction.values[0];
-  if (!selected) {
-    await interaction.reply({ content: "No reservation selected.", ephemeral: true });
-    return;
-  }
-
-  const id = parseInt(selected, 10);
-  const reservations = await storage.getReservations();
-  const reservation = reservations.find(r => r.id === id);
-  if (!reservation) {
-    await interaction.reply({ content: "Reservation not found or already removed.", ephemeral: true });
-    return;
-  }
-
-  try {
-    await storage.deleteReservation(id);
-    await interaction.reply({ content: `Cancelled reservation for ${reservation.user.username} (${reservation.category}).`, ephemeral: true });
-
-    // Attempt to update the main Org embed in this channel
-    if (interaction.channel instanceof TextChannel) {
-      const messages = await interaction.channel.messages.fetch({ limit: 50 });
-      const orgMessage = messages.find((m: DiscordMessage) => m.author.id === client?.user?.id && m.embeds.length > 0 && (m.embeds[0].title?.includes('Operation Incense') || m.embeds[0].title?.includes('Buyers Org')));
-      if (orgMessage) {
-        await updateOrgEmbed(interaction.channel, orgMessage.id);
-      }
+  if (interaction.customId === 'admin_cancel_select') {
+    const selected = interaction.values && interaction.values[0];
+    if (!selected) {
+      await interaction.reply({ content: "No reservation selected.", ephemeral: true });
+      return;
     }
-  } catch (err) {
-    console.error("Failed to delete reservation via admin select:", err);
-    await interaction.reply({ content: "Failed to cancel reservation. Try again later.", ephemeral: true });
+
+    const id = parseInt(selected, 10);
+    const reservations = await storage.getReservations();
+    const reservation = reservations.find(r => r.id === id);
+    if (!reservation) {
+      await interaction.reply({ content: "Reservation not found or already removed.", ephemeral: true });
+      return;
+    }
+
+    // Show buttons for admin options: Clear Pokemon (keep category) or Full Cancel
+    const hasPokemon = reservation.pokemon1 || reservation.pokemon2 || reservation.additionalPokemon;
+    const buttonRow = new ActionRowBuilder<ButtonBuilder>()
+      .addComponents(
+        new ButtonBuilder()
+          .setCustomId(`admin_clear_pokemon_${id}`)
+          .setLabel('Clear Pokemon (Keep Category)')
+          .setStyle(ButtonStyle.Primary)
+          .setDisabled(!hasPokemon),
+        new ButtonBuilder()
+          .setCustomId(`admin_full_cancel_${id}`)
+          .setLabel('Full Cancel')
+          .setStyle(ButtonStyle.Danger),
+      );
+
+    const pokemonList = [reservation.pokemon1, reservation.pokemon2, reservation.additionalPokemon].filter(Boolean).join(', ');
+    await interaction.reply({ 
+      content: `**${reservation.user.username}** - ${reservation.category}${reservation.subCategory ? ` (${reservation.subCategory})` : ''}\nPokemon: ${pokemonList || 'None'}\n\n**Clear Pokemon** - Remove their Pokemon selection but keep their category. They will be notified.\n**Full Cancel** - Remove their entire reservation.`, 
+      components: [buttonRow], 
+      ephemeral: true 
+    });
+    return;
   }
 }
 
@@ -1857,10 +2090,24 @@ async function handleMessage(message: Message) {
     // Parse Pokemon names - split by spaces, but allow for multi-word Pokemon names
     const pokemonArray = pokemonNames.split(' ').filter(p => p.length > 0);
 
-    // For Reserve categories, MissingNo, Choice 1, and Choice 2, allow up to 2 Pokemon
+    // For Reserve categories, MissingNo, Choice 1, Choice 2, Staff Reserve allow up to 2 Pokemon
     const isReserveCategory = reservation.category.startsWith('Reserve');
     const isMissingNo = reservation.category === 'MissingNo';
     const isChoice = reservation.category === 'Choice 1' || reservation.category === 'Choice 2';
+    const isStaffReserve = reservation.category === 'Staff Reserve';
+    const isServerBoosterReserves = reservation.category === 'Server Booster Reserves';
+    
+    // Check if user is staff (for Server Booster allowing 2 Pokemon)
+    let isStaff = false;
+    try {
+      const guild = message.guild;
+      if (guild) {
+        const member = await guild.members.fetch(message.author.id);
+        isStaff = member.roles.cache.has(ADMIN_ROLE_ID);
+      }
+    } catch (e) {
+      // ignore
+    }
     
     // Check if this is a split reservation for Reserves (second person claiming split gets only 1 Pokemon)
     let isSplitReservation = false;
@@ -1879,7 +2126,19 @@ async function handleMessage(message: Message) {
       }
     }
     
-    const maxPokemon = isSplitReservation ? 1 : ((isReserveCategory || isMissingNo || isChoice) ? 2 : 1);
+    // Check if this is Server Booster non-staff (they only get 1 Pokemon)
+    let isBoosterNonStaff = false;
+    if (isServerBoosterReserves && !isStaff) {
+      isBoosterNonStaff = true;
+    }
+    
+    // Determine max Pokemon
+    let maxPokemon = 1;
+    if (isSplitReservation || isBoosterNonStaff) {
+      maxPokemon = 1;
+    } else if (isReserveCategory || isMissingNo || isChoice || isStaffReserve || (isServerBoosterReserves && isStaff)) {
+      maxPokemon = 2;
+    }
 
     if (pokemonArray.length > maxPokemon) {
       await message.reply(`You can only reserve up to ${maxPokemon} Pokemon for ${reservation.category}.`);
@@ -1919,16 +2178,16 @@ async function handleMessage(message: Message) {
       await storage.updateReservation(reservation.id, { pokemon1: pokemonName });
       // Show appropriate message based on category and split status
       let extraMsg = '';
-      if (isSplitReservation) {
-        extraMsg = ''; // Split only gets 1 Pokemon, no extra message
-      } else if (isReserveCategory || isMissingNo) {
+      if (isSplitReservation || isBoosterNonStaff) {
+        extraMsg = ''; // Split and non-staff boosters only get 1 Pokemon, no extra message
+      } else if (isReserveCategory || isMissingNo || isStaffReserve || (isServerBoosterReserves && isStaff)) {
         extraMsg = ' You can add one more Pokemon with !res <pokemon>.';
       } else if (isChoice) {
         extraMsg = ' You can optionally add one more Pokemon with !res <pokemon>.';
       }
       await message.reply(`Reserved ${pokemonName} for ${reservation.category}.${extraMsg}`);
       updated = true;
-    } else if (!reservation.pokemon2 && (isReserveCategory || isMissingNo || isChoice) && !isSplitReservation) {
+    } else if (!reservation.pokemon2 && (isReserveCategory || isMissingNo || isChoice || isStaffReserve || (isServerBoosterReserves && isStaff)) && !isSplitReservation && !isBoosterNonStaff) {
       await storage.updateReservation(reservation.id, { pokemon2: pokemonName });
       await message.reply(`Reserved second Pokemon ${pokemonName} for ${reservation.category}.`);
       updated = true;
@@ -1951,8 +2210,8 @@ async function handleMessage(message: Message) {
       await message.reply(`You already have reservations for this category.`);
     }
   } 
-  // Handle double Pokemon reservation (for Reserve categories, MissingNo, and Choice - but NOT for splits)
-  else if (pokemonArray.length === 2 && (isReserveCategory || isMissingNo || isChoice) && !isSplitReservation) {
+  // Handle double Pokemon reservation (for Reserve categories, MissingNo, Choice, Staff Reserve, Server Booster staff - but NOT for splits or non-staff boosters)
+  else if (pokemonArray.length === 2 && (isReserveCategory || isMissingNo || isChoice || isStaffReserve || (isServerBoosterReserves && isStaff)) && !isSplitReservation && !isBoosterNonStaff) {
     const [pokemon1, pokemon2] = pokemonArray;
 
     if (!reservation.pokemon1) {

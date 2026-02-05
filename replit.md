@@ -72,9 +72,24 @@ shared/           # Shared code between client/server
 - **Key Commands**: 
   - `/startorg` - Start new organization round
   - `/refreshorg` - Refresh embed with latest data (uses database tracking)
-  - `/reloadorg` - Force recreate embed if stuck or missing (NEW)
-  - `/cancelres` - Cancel your reservation
+  - `/reloadorg` - Force recreate embed if stuck or missing
+  - `/cancelres` - Manage your reservation (Change Reserve or Full Cancel)
   - `/endorg` - Close organization (admin only)
+
+## Reservation Management Features
+
+### User /cancelres Flow
+1. User runs `/cancelres` and sees a select menu of their reservations
+2. After selecting, two options are shown:
+   - **Change Reserve** - Clears Pokemon selection but keeps category. User can use `!res` to pick new Pokemon
+   - **Full Cancel** - Removes the entire reservation
+
+### Admin Manage Reservations Flow
+1. Admin clicks "Manage Reservations" button on org embed
+2. Select a user's reservation from the menu
+3. Two options are shown:
+   - **Clear Pokemon (Keep Category)** - Clears the user's Pokemon and notifies them in-channel to use `!res`
+   - **Full Cancel** - Removes the reservation entirely
 
 ### Database
 - **Type**: PostgreSQL
