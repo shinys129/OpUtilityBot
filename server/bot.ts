@@ -205,6 +205,19 @@ async function buildCategoryButtons(reservations: any[]): Promise<ActionRowBuild
     return owners.length >= 1;
   };
 
+  const gmaxRes = reservations.find(r => r.category === 'Gmax');
+  const eevosRes = reservations.find(r => r.category === 'Eevos');
+  let firstGmaxEevos: string | null = null;
+  if (gmaxRes && eevosRes) {
+    const gmaxTime = gmaxRes.createdAt ? new Date(gmaxRes.createdAt).getTime() : Infinity;
+    const eevosTime = eevosRes.createdAt ? new Date(eevosRes.createdAt).getTime() : Infinity;
+    firstGmaxEevos = gmaxTime <= eevosTime ? 'gmax' : 'eevos';
+  } else if (gmaxRes) {
+    firstGmaxEevos = 'gmax';
+  } else if (eevosRes) {
+    firstGmaxEevos = 'eevos';
+  }
+
   const getLabel = (catKey: string, baseName: string, range: string) => {
     const owners = claimedCategories.get(catKey.toLowerCase()) || [];
 
@@ -229,6 +242,9 @@ async function buildCategoryButtons(reservations: any[]): Promise<ActionRowBuild
       return baseName;
     }
 
+    const clockPrefix = (catKey.toLowerCase() === 'gmax' || catKey.toLowerCase() === 'eevos') && 
+      firstGmaxEevos === catKey.toLowerCase() && owners.length > 0 ? '\u{1F552} ' : '';
+
     if (owners.length === 0) return `${baseName} (${range})`;
     if (catKey.toLowerCase() === 'regionals') return `${baseName} (${range}) [${owners.length}/3]`;
     if (catKey.toLowerCase().startsWith('reserve')) {
@@ -248,7 +264,7 @@ async function buildCategoryButtons(reservations: any[]): Promise<ActionRowBuild
       }
       return `${baseName} (${range}) - ${owners[0]}`;
     }
-    return `${baseName} (${range}) - ${owners[0]}`;
+    return `${clockPrefix}${baseName} (${range}) - ${owners[0]}`;
   };
 
   const row1 = new ActionRowBuilder<ButtonBuilder>()
@@ -280,17 +296,17 @@ async function buildCategoryButtons(reservations: any[]): Promise<ActionRowBuild
       new ButtonBuilder()
         .setCustomId('cat_choice1')
         .setLabel(getLabel('choice1', 'Choice 1', '68-74'))
-        .setStyle(isLocked('choice1') ? ButtonStyle.Secondary : ButtonStyle.Secondary)
+        .setStyle(isLocked('choice1') ? ButtonStyle.Secondary : ButtonStyle.Primary)
         .setDisabled(isLocked('choice1')),
       new ButtonBuilder()
         .setCustomId('cat_choice2')
         .setLabel(getLabel('choice2', 'Choice 2', '75-81'))
-        .setStyle(isLocked('choice2') ? ButtonStyle.Secondary : ButtonStyle.Secondary)
+        .setStyle(isLocked('choice2') ? ButtonStyle.Secondary : ButtonStyle.Primary)
         .setDisabled(isLocked('choice2')),
       new ButtonBuilder()
         .setCustomId('cat_missingno')
         .setLabel(getLabel('missingno', 'MissingNo', '82-88'))
-        .setStyle(isLocked('missingno') ? ButtonStyle.Secondary : ButtonStyle.Secondary)
+        .setStyle(isLocked('missingno') ? ButtonStyle.Secondary : ButtonStyle.Primary)
         .setDisabled(isLocked('missingno')),
     );
 
@@ -1417,21 +1433,22 @@ async function handleButton(interaction: any) {
                             takenSubcategories.includes('alolan') && 
                             takenSubcategories.includes('hisuian');
       
-      // Block if all 3 subcategories are taken OR Standard has reserved (picked their bird)
+      // Block if all 3 subcategories are taken
       if (allThreeTaken) {
         await interaction.reply({ content: `All Regional subcategories are taken. Someone must use /cancelres first.`, ephemeral: true });
         return;
       }
       
-      if (hasStandardRegional && standardHasReserved) {
-        await interaction.reply({ content: `A Sub category has been taken so Standard regionals is unavailable.`, ephemeral: true });
+      // If Standard Regional is picked, block all sub-categories
+      if (hasStandardRegional) {
+        await interaction.reply({ content: `Standard Regional has been picked so the sub-categories (Galarian, Alolan, Hisuian) are not available.`, ephemeral: true });
         return;
       }
       
       // Build subcategory buttons
       const buttons: ButtonBuilder[] = [];
       
-      // Show sub-categories if not already taken
+      // Show sub-categories if not already taken (only when Standard Regional is NOT selected)
       if (!takenSubcategories.includes('galarian')) {
         buttons.push(new ButtonBuilder().setCustomId('sub_galarian').setLabel('Galarian').setStyle(ButtonStyle.Primary));
       }
@@ -1445,7 +1462,8 @@ async function handleButton(interaction: any) {
       // Show Standard Regional if:
       // - No sub-category has used !res yet (anySubCategoryHasReserved = false)
       // - No Standard Regional already exists
-      if (!hasStandardRegional && !anySubCategoryHasReserved) {
+      // - No sub-categories exist at all (sub-categories being selected blocks Standard)
+      if (!hasStandardRegional && !anySubCategoryHasReserved && subCategoryReservations.length === 0) {
         buttons.push(new ButtonBuilder().setCustomId('sub_none').setLabel('Standard Regional').setStyle(ButtonStyle.Secondary));
       }
       
@@ -1642,6 +1660,8 @@ async function handleButton(interaction: any) {
         });
       } else if (customId === 'cat_missingno') {
         await interaction.reply({ content: `You selected ${categoryName}. **Use !res (Pokemon Pokemon) to reserve your 2 Pokemon**.`, ephemeral: true });
+      } else if (customId === 'cat_choice1' || customId === 'cat_choice2') {
+        await interaction.reply({ content: `You selected ${categoryName}. **Use !res (GroupName) for a group or !res (Pokemon Pokemon) for 2 individual Pokemon with multiple forms**.`, ephemeral: true });
       } else {
         await interaction.reply({ content: `You selected ${categoryName}. **Use !res (Pokemon) to reserve**.`, ephemeral: true });
       }
@@ -1688,10 +1708,10 @@ async function handleButton(interaction: any) {
       return;
     }
     
-    // Check if Standard Regional has picked their bird - blocks ALL sub-categories
+    // Check if Standard Regional exists - blocks ALL sub-categories
     const standardHolder = regionalReservations.find(r => r.subCategory === 'standard' || r.subCategory === 'none');
-    if (standardHolder && standardHolder.additionalPokemon && sub !== 'none') {
-      await interaction.reply({ content: `All Regional sub-categories are locked because Standard Regional has already selected their Galarian bird.`, ephemeral: true });
+    if (standardHolder && sub !== 'none') {
+      await interaction.reply({ content: `Standard Regional has been picked so the sub-categories (Galarian, Alolan, Hisuian) are not available.`, ephemeral: true });
       return;
     }
     
@@ -2179,11 +2199,11 @@ async function handleMessage(message: Message) {
       // Show appropriate message based on category and split status
       let extraMsg = '';
       if (isSplitReservation || isBoosterNonStaff) {
-        extraMsg = ''; // Split and non-staff boosters only get 1 Pokemon, no extra message
+        extraMsg = '';
       } else if (isReserveCategory || isMissingNo || isStaffReserve || (isServerBoosterReserves && isStaff)) {
         extraMsg = ' You can add one more Pokemon with !res <pokemon>.';
       } else if (isChoice) {
-        extraMsg = ' You can optionally add one more Pokemon with !res <pokemon>.';
+        extraMsg = '';
       }
       await message.reply(`Reserved ${pokemonName} for ${reservation.category}.${extraMsg}`);
       updated = true;
