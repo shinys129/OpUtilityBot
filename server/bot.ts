@@ -1405,7 +1405,7 @@ async function handleButton(interaction: any) {
     const existingReservations = await storage.getReservations();
 
     // Block user from claiming a new category if they have an incomplete reservation that requires !res
-    const categoriesRequiringRes = ['Reserve 1', 'Reserve 2', 'Reserve 3', 'MissingNo', 'Choice 1', 'Choice 2', 'Staff Reserve', 'Server Booster Reserves'];
+    const categoriesRequiringRes = ['Rares', 'Eevos', 'Reserve 1', 'Reserve 2', 'Reserve 3', 'MissingNo', 'Choice 1', 'Choice 2', 'Staff Reserve', 'Server Booster Reserves'];
     const userExistingReservations = existingReservations.filter(r => r.user.discordId === userId);
     for (const userRes of userExistingReservations) {
       let needsRes = false;
@@ -2124,20 +2124,15 @@ async function handleMessage(message: Message) {
       return;
     }
 
-    // Categories that don't support !res at all
-    const categoriesWithoutRes = ['Rares', 'Eevos'];
-
-    // Also check regional sub-categories that don't support !res
+    // Check regional sub-categories that don't support !res
     const isNonResRegional = (r: typeof userReservations[0]) => {
       if (r.category !== 'Regionals') return false;
       const sub = r.subCategory?.toLowerCase();
       return sub === 'alolan' || sub === 'hisuian' || sub === 'galarian';
     };
 
-    // Filter to only reservations that actually support !res
-    const resEligibleReservations = userReservations.filter(r => 
-      !categoriesWithoutRes.includes(r.category) && !isNonResRegional(r)
-    );
+    // Filter out regional sub-categories that don't support !res
+    const resEligibleReservations = userReservations.filter(r => !isNonResRegional(r));
 
     if (resEligibleReservations.length === 0) {
       await message.reply(`None of your current categories use !res. Your reservations are already complete.`);
