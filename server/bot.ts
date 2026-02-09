@@ -1403,6 +1403,43 @@ async function handleButton(interaction: any) {
 
     // Check if category is already claimed by someone else
     const existingReservations = await storage.getReservations();
+
+    // Block user from claiming a new category if they have an incomplete reservation that requires !res
+    const categoriesRequiringRes = ['Reserve 1', 'Reserve 2', 'Reserve 3', 'MissingNo', 'Choice 1', 'Choice 2', 'Staff Reserve', 'Server Booster Reserves'];
+    const userExistingReservations = existingReservations.filter(r => r.user.discordId === userId);
+    for (const userRes of userExistingReservations) {
+      let needsRes = false;
+
+      if (categoriesRequiringRes.includes(userRes.category)) {
+        // Check if they still need to use !res (pokemon1 not set)
+        if (!userRes.pokemon1) {
+          needsRes = true;
+        }
+      } else if (userRes.category === 'Gmax') {
+        // Gmax needs: pick Gmax rare (additionalPokemon) then !res for additional reserve (pokemon1)
+        if (!userRes.additionalPokemon || !userRes.pokemon1) {
+          needsRes = true;
+        }
+      } else if (userRes.category === 'Regionals' && (userRes.subCategory === 'standard' || userRes.subCategory === 'none')) {
+        // Standard Regional needs: pick Galarian bird (additionalPokemon) then !res for additional reserve (pokemon1)
+        if (!userRes.additionalPokemon || !userRes.pokemon1) {
+          needsRes = true;
+        }
+      }
+
+      if (needsRes) {
+        // Build a helpful message based on what step they're missing
+        let stepMessage = 'adding your Pokemon using **!res**';
+        if ((userRes.category === 'Gmax' && !userRes.additionalPokemon)) {
+          stepMessage = 'picking your Gigantamax Rare and then using **!res** for your additional reserve';
+        } else if (userRes.category === 'Regionals' && !userRes.additionalPokemon) {
+          stepMessage = 'picking your Galarian bird and then using **!res** for your additional reserve';
+        }
+
+        await interaction.reply({ content: `You must complete your reservation for **${userRes.category}${userRes.subCategory && userRes.subCategory !== 'none' ? ` (${userRes.subCategory})` : ''}** by ${stepMessage} before selecting another category.`, ephemeral: true });
+        return;
+      }
+    }
     
     // Special handling for Regionals - allow multiple subcategories but not Standard Regional with others
     if (categoryName === 'Regionals') {
@@ -2087,10 +2124,29 @@ async function handleMessage(message: Message) {
       return;
     }
 
-    // If user has multiple reservations (e.g. splits or multiple regionals), we need to decide which one to update
-    // For now, we'll pick the one that doesn't have pokemon1 set, or the most recent one.
-    let reservation = userReservations.find(r => !r.pokemon1);
-    if (!reservation) reservation = userReservations[0];
+    // Categories that don't support !res at all
+    const categoriesWithoutRes = ['Rares', 'Eevos'];
+
+    // Also check regional sub-categories that don't support !res
+    const isNonResRegional = (r: typeof userReservations[0]) => {
+      if (r.category !== 'Regionals') return false;
+      const sub = r.subCategory?.toLowerCase();
+      return sub === 'alolan' || sub === 'hisuian' || sub === 'galarian';
+    };
+
+    // Filter to only reservations that actually support !res
+    const resEligibleReservations = userReservations.filter(r => 
+      !categoriesWithoutRes.includes(r.category) && !isNonResRegional(r)
+    );
+
+    if (resEligibleReservations.length === 0) {
+      await message.reply(`None of your current categories use !res. Your reservations are already complete.`);
+      return;
+    }
+
+    // Pick the reservation that needs !res (doesn't have pokemon1 set), or the most recent one
+    let reservation = resEligibleReservations.find(r => !r.pokemon1);
+    if (!reservation) reservation = resEligibleReservations[0];
 
     // Block Alolan/Hisuian/Galarian sub-categories from using !res (they don't get extra reserve)
     if (reservation.category === 'Regionals') {
