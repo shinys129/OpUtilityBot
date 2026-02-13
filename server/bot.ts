@@ -22,6 +22,7 @@ const CATEGORIES = {
 };
 
 let client: Client | null = null;
+let boosterUnlocked = false;
 
 export async function startBot() {
   if (!process.env.DISCORD_TOKEN) {
@@ -193,7 +194,7 @@ async function buildCategoryButtons(reservations: any[]): Promise<ActionRowBuild
       return owners.length >= 1;
     }
     if (catKey.toLowerCase() === 'booster') {
-      // Server Booster allows 2 people with 1 Pokemon each (unless staff who can have 2)
+      if (!boosterUnlocked) return true;
       const categoryReservations = reservations.filter(r => r.category === 'Server Booster Reserves');
       return categoryReservations.length >= 2;
     }
@@ -222,12 +223,13 @@ async function buildCategoryButtons(reservations: any[]): Promise<ActionRowBuild
     const owners = claimedCategories.get(catKey.toLowerCase()) || [];
 
     if (catKey.toLowerCase() === 'booster') {
+      if (!boosterUnlocked) {
+        return `${baseName} - LOCKED`;
+      }
       const categoryReservations = reservations.filter(r => r.category === 'Server Booster Reserves');
-      // If 2 people have claimed (split taken)
       if (categoryReservations.length >= 2) {
         return `${baseName} - SPLIT TAKEN`;
       }
-      // If 1 person has claimed (split available)
       if (categoryReservations.length === 1) {
         return `${baseName} - SPLIT`;
       }
@@ -345,7 +347,9 @@ async function buildCategoryButtons(reservations: any[]): Promise<ActionRowBuild
 
   const adminRow = new ActionRowBuilder<ButtonBuilder>()
     .addComponents(
-      new ButtonBuilder().setCustomId('admin_manage').setLabel('🔧 Manage Reservations').setStyle(ButtonStyle.Danger),
+      new ButtonBuilder().setCustomId('admin_manage').setLabel('Manage Reservations').setStyle(ButtonStyle.Danger),
+      new ButtonBuilder().setCustomId('staff_announce_buy').setLabel('Announce Buy').setStyle(ButtonStyle.Success),
+      new ButtonBuilder().setCustomId('staff_unlock_booster').setLabel(boosterUnlocked ? 'Booster Res Unlocked' : 'Unlock Booster Res').setStyle(boosterUnlocked ? ButtonStyle.Secondary : ButtonStyle.Success).setDisabled(boosterUnlocked),
     );
 
   return [row1, row2, row3, boosterRow, adminRow];
@@ -577,13 +581,10 @@ async function handleSlashCommand(interaction: any) {
       });
     }
 
+    boosterUnlocked = false;
+
     const buttons = await buildCategoryButtons(reservations);
     const message = await interaction.reply({ embeds: [embed], components: buttons, fetchReply: true });
-
-    // Send role message if all categories filled
-    if (filledCategories === totalCategories) {
-      await interaction.channel.send(`Thank you <@&1468236218331562024> all slots have been filled and you can start buying your channels!`);
-    }
 
     if (interaction.channel instanceof TextChannel) {
       await storage.setOrgState(interaction.channel.id, message.id);
@@ -880,6 +881,7 @@ async function handleSlashCommand(interaction: any) {
     }
 
     // Clear reservations and channel checks (reset isComplete but preserve mappings)
+    boosterUnlocked = false;
     try {
       console.log("[endorg] Clearing data...");
       await storage.clearReservations();
@@ -1395,6 +1397,67 @@ async function handleButton(interaction: any) {
     return;
   }
 
+  // Staff: Announce Buy button
+  if (customId === 'staff_announce_buy') {
+    let isAdmin = false;
+    const dbAdminRoleId = await storage.getAdminRole();
+    try {
+      const member = interaction.member;
+      if (member && member.permissions && member.permissions.has && member.permissions.has(PermissionFlagsBits.ManageGuild)) {
+        isAdmin = true;
+      } else if (member && member.roles && member.roles.cache && member.roles.cache.has(ADMIN_ROLE_ID)) {
+        isAdmin = true;
+      } else if (member && dbAdminRoleId && member.roles && member.roles.cache && member.roles.cache.has(dbAdminRoleId)) {
+        isAdmin = true;
+      }
+    } catch (e) {}
+
+    if (!isAdmin) {
+      await interaction.reply({ content: "Only staff can use this button.", ephemeral: true });
+      return;
+    }
+
+    if (interaction.channel instanceof TextChannel) {
+      await interaction.channel.send({
+        content: `Thank you <@&1468236218331562024> all slots have been filled and you can start buying your channels!`,
+        allowedMentions: { roles: ['1468236218331562024'] }
+      });
+      await interaction.reply({ content: "Buy announcement sent.", ephemeral: true });
+    } else {
+      await interaction.reply({ content: "This can only be used in a text channel.", ephemeral: true });
+    }
+    return;
+  }
+
+  // Staff: Unlock Booster Reserves button
+  if (customId === 'staff_unlock_booster') {
+    let isAdmin = false;
+    const dbAdminRoleId = await storage.getAdminRole();
+    try {
+      const member = interaction.member;
+      if (member && member.permissions && member.permissions.has && member.permissions.has(PermissionFlagsBits.ManageGuild)) {
+        isAdmin = true;
+      } else if (member && member.roles && member.roles.cache && member.roles.cache.has(ADMIN_ROLE_ID)) {
+        isAdmin = true;
+      } else if (member && dbAdminRoleId && member.roles && member.roles.cache && member.roles.cache.has(dbAdminRoleId)) {
+        isAdmin = true;
+      }
+    } catch (e) {}
+
+    if (!isAdmin) {
+      await interaction.reply({ content: "Only staff can use this button.", ephemeral: true });
+      return;
+    }
+
+    boosterUnlocked = true;
+    await interaction.reply({ content: "Server Booster Reserves have been unlocked. Users can now claim them.", ephemeral: true });
+
+    if (interaction.channel instanceof TextChannel && interaction.message) {
+      await updateOrgEmbed(interaction.channel, interaction.message.id);
+    }
+    return;
+  }
+
   // Handle Category Selection
   if (customId.startsWith('cat_')) {
     const categoryKey = customId.replace('cat_', '').toUpperCase();
@@ -1557,25 +1620,19 @@ async function handleButton(interaction: any) {
         return;
       }
       
-      // Special logic for Server Booster Reserves: require booster role, only after other categories taken
+      // Special logic for Server Booster Reserves: require booster role, must be unlocked by staff
       if (categoryName === 'Server Booster Reserves') {
+        if (!boosterUnlocked) {
+          await interaction.reply({ content: `Server Booster Reserves are currently locked. A staff member must unlock them first.`, ephemeral: true });
+          return;
+        }
+
         const BOOSTER_ROLE_ID = '1405333965933383772';
         const member = await interaction.guild?.members.fetch(userId);
         const isStaff = member?.roles.cache.has(ADMIN_ROLE_ID);
         
         if (!member?.roles.cache.has(BOOSTER_ROLE_ID) && !isStaff) {
           await interaction.reply({ content: `You must have the Server Booster role to claim this category.`, ephemeral: true });
-          return;
-        }
-        
-        // Check if other categories are filled first (excluding Booster and Staff)
-        const mainCategories = Object.entries(CATEGORIES)
-          .filter(([key]) => key !== 'BOOSTER' && key !== 'STAFF')
-          .map(([_, cat]) => cat.name);
-        const filledCategories = new Set(existingReservations.filter(r => mainCategories.includes(r.category)).map(r => r.category));
-        
-        if (filledCategories.size < mainCategories.length) {
-          await interaction.reply({ content: `Server Booster Reserves can only be claimed after all other categories are taken.`, ephemeral: true });
           return;
         }
         
@@ -1707,15 +1764,6 @@ async function handleButton(interaction: any) {
     // Update the main embed
     if (interaction.channel instanceof TextChannel && interaction.message) {
       await updateOrgEmbed(interaction.channel, interaction.message.id);
-      
-      // Check if all non-booster categories are filled and send announcement
-      const allReservations = await storage.getReservations();
-      const totalCategories = Object.keys(CATEGORIES).filter(k => k !== 'BOOSTER' && k !== 'STAFF').length;
-      const filledCategories = new Set(allReservations.filter(r => r.category !== 'Server Booster Reserves').map(r => r.category)).size;
-      
-      if (filledCategories === totalCategories) {
-        await interaction.channel.send(`Thank you <@&1468236218331562024> all slots have been filled and you can start buying your channels!`);
-      }
     }
     return;
   }
