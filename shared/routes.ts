@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { insertReservationSchema, reservations, channelChecks, users } from './schema';
+import { reservations, channelChecks, users } from './schema';
 
 export const errorSchemas = {
   validation: z.object({
@@ -23,7 +23,6 @@ export const api = {
         200: z.array(z.custom<typeof reservations.$inferSelect & { user: typeof users.$inferSelect }>()),
       },
     },
-    // Useful for the web dashboard to see what's happening
     stats: {
       method: 'GET' as const,
       path: '/api/stats',
@@ -42,6 +41,34 @@ export const api = {
       responses: {
         200: z.array(z.custom<typeof channelChecks.$inferSelect>()),
       },
+    },
+  },
+  moderation: {
+    auditLogs: {
+      method: 'GET' as const,
+      path: '/api/moderation/audit-logs',
+    },
+    warnings: {
+      method: 'GET' as const,
+      path: '/api/moderation/warnings',
+    },
+    bans: {
+      method: 'GET' as const,
+      path: '/api/moderation/bans',
+    },
+    mutes: {
+      method: 'GET' as const,
+      path: '/api/moderation/mutes',
+    },
+  },
+  steals: {
+    list: {
+      method: 'GET' as const,
+      path: '/api/steals',
+    },
+    byUser: {
+      method: 'GET' as const,
+      path: '/api/steals/user/:discordId',
     },
   },
 };

@@ -1,8 +1,14 @@
-import { Bot, LayoutDashboard, Database } from "lucide-react";
+import { Bot, LayoutDashboard, Shield, FileText } from "lucide-react";
 import { Link, useLocation } from "wouter";
 
 export function Header() {
   const [location] = useLocation();
+
+  const navItems = [
+    { href: "/", label: "Overview", icon: LayoutDashboard },
+    { href: "/moderation", label: "Mod Log", icon: Shield },
+    { href: "/steals", label: "Steal Log", icon: FileText },
+  ];
 
   return (
     <header className="sticky top-0 z-50 w-full border-b border-border/50 bg-background/80 backdrop-blur-xl">
@@ -17,24 +23,28 @@ export function Header() {
           </div>
         </div>
 
-        <nav className="hidden md:flex items-center gap-1">
-          <Link href="/">
-            <div className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors cursor-pointer flex items-center gap-2
-              ${location === '/' 
-                ? 'bg-primary/10 text-primary' 
-                : 'text-muted-foreground hover:text-foreground hover:bg-secondary/50'
-              }`}
-            >
-              <LayoutDashboard className="w-4 h-4" />
-              Overview
-            </div>
-          </Link>
+        <nav className="hidden md:flex items-center gap-1" data-testid="nav-main">
+          {navItems.map((item) => (
+            <Link key={item.href} href={item.href}>
+              <div className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors cursor-pointer flex items-center gap-2
+                ${location === item.href
+                  ? 'bg-primary/10 text-primary'
+                  : 'text-muted-foreground hover:text-foreground hover:bg-secondary/50'
+                }`}
+                data-testid={`link-${item.label.toLowerCase().replace(/\s+/g, '-')}`}
+              >
+                <item.icon className="w-4 h-4" />
+                {item.label}
+              </div>
+            </Link>
+          ))}
           <div className="w-px h-4 bg-border mx-2" />
-          <a 
-            href="https://discord.com" 
-            target="_blank" 
+          <a
+            href="https://discord.com"
+            target="_blank"
             rel="noreferrer"
             className="px-4 py-2 rounded-lg text-sm font-medium text-muted-foreground hover:text-foreground transition-colors"
+            data-testid="link-discord"
           >
             Open Discord
           </a>

@@ -113,6 +113,35 @@ A robust system for reloading and refreshing Discord embeds that may get stuck o
 - **Zero Data Loss**: All reservation data preserved during reload operations
 - **Performance**: 5-10x faster refresh using database lookup (50-100ms vs 500ms-1s)
 
+## Moderation System (New)
+
+### Staff Commands
+- `/warn <user> <reason>` - Issue a warning
+- `/mute <user> <reason> [duration]` - Mute user (applies Discord timeout if duration set)
+- `/unmute <user>` - Remove mute
+- `/ban <user> <reason> [duration]` - Ban from org (optional duration in days)
+- `/unban <user>` - Remove ban
+- `/steal <user> <item> [notes]` - Log a steal infraction
+- `/lookup <user>` - View full user record (warnings, steals, ban/mute status)
+- `/modlog [limit]` - View recent moderation actions
+
+### Database Tables (Moderation)
+- `user_warnings` - Warning records with reason, staff who issued, active status
+- `user_bans` - Ban records with reason, expiry, active status
+- `user_mutes` - Mute records with reason, expiry, active status
+- `steal_logs` - Steal infraction records with item, notes, staff who logged
+- `audit_logs` - All moderation actions for accountability
+
+### Dashboard Pages
+- **Moderation Log** (`/moderation`) - View all staff actions, warnings, bans, mutes with tabs
+- **Steal Log** (`/steals`) - View all steal records with user lookup by Discord ID
+
+### Staff Authorization
+Staff permissions checked via: ManageGuild permission OR ADMIN_ROLE_ID constant OR database-stored adminRoleId
+
+### Storage Pattern
+Uses separate queries + in-memory hydration (hydrateUsers helper) instead of Drizzle .as() joins to avoid aliasing issues
+
 ### Documentation
 - **[QUICKSTART_EMBED_RELOAD.md](./QUICKSTART_EMBED_RELOAD.md)** - User guide with examples
 - **[FEATURE_EMBED_RELOAD.md](./FEATURE_EMBED_RELOAD.md)** - Comprehensive feature documentation  

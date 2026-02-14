@@ -168,6 +168,77 @@ async function registerSlashCommands() {
          },
        ],
      });
+
+     await client.application.commands.create({
+       name: 'warn',
+       description: 'Warn a user (staff only).',
+       options: [
+         { name: 'user', description: 'The user to warn.', type: 6, required: true },
+         { name: 'reason', description: 'Reason for the warning.', type: 3, required: true },
+       ],
+     });
+
+     await client.application.commands.create({
+       name: 'mute',
+       description: 'Mute a user (staff only).',
+       options: [
+         { name: 'user', description: 'The user to mute.', type: 6, required: true },
+         { name: 'reason', description: 'Reason for the mute.', type: 3, required: true },
+         { name: 'duration', description: 'Duration in minutes (leave empty for indefinite).', type: 4, required: false },
+       ],
+     });
+
+     await client.application.commands.create({
+       name: 'unmute',
+       description: 'Unmute a user (staff only).',
+       options: [
+         { name: 'user', description: 'The user to unmute.', type: 6, required: true },
+       ],
+     });
+
+     await client.application.commands.create({
+       name: 'ban',
+       description: 'Ban a user from org reservations (staff only).',
+       options: [
+         { name: 'user', description: 'The user to ban.', type: 6, required: true },
+         { name: 'reason', description: 'Reason for the ban.', type: 3, required: true },
+         { name: 'duration', description: 'Duration in days (leave empty for permanent).', type: 4, required: false },
+       ],
+     });
+
+     await client.application.commands.create({
+       name: 'unban',
+       description: 'Unban a user from org reservations (staff only).',
+       options: [
+         { name: 'user', description: 'The user to unban.', type: 6, required: true },
+       ],
+     });
+
+     await client.application.commands.create({
+       name: 'steal',
+       description: 'Log a steal against a user (staff only).',
+       options: [
+         { name: 'user', description: 'The user who stole.', type: 6, required: true },
+         { name: 'item', description: 'What was stolen.', type: 3, required: true },
+         { name: 'notes', description: 'Additional notes.', type: 3, required: false },
+       ],
+     });
+
+     await client.application.commands.create({
+       name: 'lookup',
+       description: 'Look up a user\'s moderation history and steals (staff only).',
+       options: [
+         { name: 'user', description: 'The user to look up.', type: 6, required: true },
+       ],
+     });
+
+     await client.application.commands.create({
+       name: 'modlog',
+       description: 'View recent moderation actions (staff only).',
+       options: [
+         { name: 'limit', description: 'Number of entries to show (default 10).', type: 4, required: false },
+       ],
+     });
   }
 }
 
@@ -1257,6 +1328,241 @@ async function handleSlashCommand(interaction: any) {
         await interaction.reply({ content: "❌ Failed to send message. Please try again.", ephemeral: true });
       }
     }
+  }
+
+  // ===== MODERATION COMMANDS =====
+
+  const moderationCommands = ['warn', 'mute', 'unmute', 'ban', 'unban', 'steal', 'lookup', 'modlog'];
+  if (moderationCommands.includes(interaction.commandName)) {
+    let isStaff = false;
+    const dbAdminRoleId = await storage.getAdminRole();
+    try {
+      const member = interaction.member;
+      if (member?.permissions?.has?.(PermissionFlagsBits.ManageGuild)) isStaff = true;
+      else if (member?.roles?.cache?.has(ADMIN_ROLE_ID)) isStaff = true;
+      else if (dbAdminRoleId && member?.roles?.cache?.has(dbAdminRoleId)) isStaff = true;
+    } catch (e) {}
+
+    if (!isStaff) {
+      await interaction.reply({ content: "You do not have permission to use this command.", ephemeral: true });
+      return;
+    }
+
+    const staffUser = await storage.getOrCreateUser(interaction.user.id, interaction.user.username);
+
+    if (interaction.commandName === 'warn') {
+      const targetDiscordUser = interaction.options.getUser('user');
+      const reason = interaction.options.getString('reason');
+      const targetUser = await storage.getOrCreateUser(targetDiscordUser.id, targetDiscordUser.username);
+
+      await storage.warnUser(targetUser.id, reason, staffUser.id);
+      await storage.createAuditLog(staffUser.id, 'warn', targetUser.id, { reason });
+
+      const warnings = await storage.getUserWarnings(targetUser.id);
+      const activeCount = warnings.filter(w => w.isActive).length;
+
+      await interaction.reply({
+        content: `**Warning Issued**\nUser: <@${targetDiscordUser.id}>\nReason: ${reason}\nTotal active warnings: ${activeCount}`,
+        ephemeral: false,
+      });
+    }
+
+    if (interaction.commandName === 'mute') {
+      const targetDiscordUser = interaction.options.getUser('user');
+      const reason = interaction.options.getString('reason');
+      const durationMinutes = interaction.options.getInteger('duration');
+      const targetUser = await storage.getOrCreateUser(targetDiscordUser.id, targetDiscordUser.username);
+
+      const expiresAt = durationMinutes ? new Date(Date.now() + durationMinutes * 60 * 1000) : undefined;
+
+      await storage.muteUser(targetUser.id, reason, staffUser.id, expiresAt);
+      await storage.createAuditLog(staffUser.id, 'mute', targetUser.id, { reason, durationMinutes });
+
+      try {
+        const guild = interaction.guild;
+        if (guild && durationMinutes) {
+          const member = await guild.members.fetch(targetDiscordUser.id);
+          await member.timeout(durationMinutes * 60 * 1000, reason);
+        }
+      } catch (e) {
+        console.error("Failed to apply Discord timeout:", e);
+      }
+
+      const durationText = durationMinutes ? `${durationMinutes} minutes` : 'indefinite';
+      await interaction.reply({
+        content: `**User Muted**\nUser: <@${targetDiscordUser.id}>\nReason: ${reason}\nDuration: ${durationText}`,
+        ephemeral: false,
+      });
+    }
+
+    if (interaction.commandName === 'unmute') {
+      const targetDiscordUser = interaction.options.getUser('user');
+      const targetUser = await storage.getUserByDiscordId(targetDiscordUser.id);
+
+      if (!targetUser) {
+        await interaction.reply({ content: "User not found in the system.", ephemeral: true });
+        return;
+      }
+
+      const isMuted = await storage.isUserMuted(targetUser.id);
+      if (!isMuted) {
+        await interaction.reply({ content: "This user is not currently muted.", ephemeral: true });
+        return;
+      }
+
+      await storage.unmuteUser(targetUser.id);
+      await storage.createAuditLog(staffUser.id, 'unmute', targetUser.id, {});
+
+      try {
+        const guild = interaction.guild;
+        if (guild) {
+          const member = await guild.members.fetch(targetDiscordUser.id);
+          await member.timeout(null);
+        }
+      } catch (e) {
+        console.error("Failed to remove Discord timeout:", e);
+      }
+
+      await interaction.reply({
+        content: `**User Unmuted**\nUser: <@${targetDiscordUser.id}>`,
+        ephemeral: false,
+      });
+    }
+
+    if (interaction.commandName === 'ban') {
+      const targetDiscordUser = interaction.options.getUser('user');
+      const reason = interaction.options.getString('reason');
+      const durationDays = interaction.options.getInteger('duration');
+      const targetUser = await storage.getOrCreateUser(targetDiscordUser.id, targetDiscordUser.username);
+
+      const alreadyBanned = await storage.isUserBanned(targetUser.id);
+      if (alreadyBanned) {
+        await interaction.reply({ content: "This user is already banned.", ephemeral: true });
+        return;
+      }
+
+      const expiresAt = durationDays ? new Date(Date.now() + durationDays * 24 * 60 * 60 * 1000) : undefined;
+
+      await storage.banUser(targetUser.id, reason, staffUser.id, expiresAt);
+      await storage.createAuditLog(staffUser.id, 'ban', targetUser.id, { reason, durationDays });
+
+      const durationText = durationDays ? `${durationDays} days` : 'permanent';
+      await interaction.reply({
+        content: `**User Banned from Org**\nUser: <@${targetDiscordUser.id}>\nReason: ${reason}\nDuration: ${durationText}`,
+        ephemeral: false,
+      });
+    }
+
+    if (interaction.commandName === 'unban') {
+      const targetDiscordUser = interaction.options.getUser('user');
+      const targetUser = await storage.getUserByDiscordId(targetDiscordUser.id);
+
+      if (!targetUser) {
+        await interaction.reply({ content: "User not found in the system.", ephemeral: true });
+        return;
+      }
+
+      const isBanned = await storage.isUserBanned(targetUser.id);
+      if (!isBanned) {
+        await interaction.reply({ content: "This user is not currently banned.", ephemeral: true });
+        return;
+      }
+
+      await storage.unbanUser(targetUser.id);
+      await storage.createAuditLog(staffUser.id, 'unban', targetUser.id, {});
+
+      await interaction.reply({
+        content: `**User Unbanned**\nUser: <@${targetDiscordUser.id}>`,
+        ephemeral: false,
+      });
+    }
+
+    if (interaction.commandName === 'steal') {
+      const targetDiscordUser = interaction.options.getUser('user');
+      const item = interaction.options.getString('item');
+      const notes = interaction.options.getString('notes');
+      const targetUser = await storage.getOrCreateUser(targetDiscordUser.id, targetDiscordUser.username);
+
+      await storage.addSteal(targetUser.id, staffUser.id, item, notes || undefined);
+      await storage.createAuditLog(staffUser.id, 'steal_logged', targetUser.id, { item, notes });
+
+      const allSteals = await storage.getUserSteals(targetUser.id);
+
+      await interaction.reply({
+        content: `**Steal Logged**\nUser: <@${targetDiscordUser.id}>\nItem: ${item}${notes ? `\nNotes: ${notes}` : ''}\nTotal steals on record: ${allSteals.length}`,
+        ephemeral: false,
+      });
+    }
+
+    if (interaction.commandName === 'lookup') {
+      const targetDiscordUser = interaction.options.getUser('user');
+      const targetUser = await storage.getUserByDiscordId(targetDiscordUser.id);
+
+      if (!targetUser) {
+        await interaction.reply({ content: `No records found for <@${targetDiscordUser.id}>.`, ephemeral: true });
+        return;
+      }
+
+      const warnings = await storage.getUserWarnings(targetUser.id);
+      const isBanned = await storage.isUserBanned(targetUser.id);
+      const isMuted = await storage.isUserMuted(targetUser.id);
+      const steals = await storage.getUserSteals(targetUser.id);
+
+      let response = `**User Lookup: ${targetUser.username}** (<@${targetDiscordUser.id}>)\n`;
+      response += `━━━━━━━━━━━━━━━━━━━━━━\n`;
+      response += `Status: ${isBanned ? 'BANNED' : isMuted ? 'MUTED' : 'Active'}\n`;
+      response += `Warnings: ${warnings.filter(w => w.isActive).length}\n`;
+      response += `Steals: ${steals.length}\n`;
+      response += `━━━━━━━━━━━━━━━━━━━━━━\n\n`;
+
+      if (warnings.length > 0) {
+        response += `**Warnings:**\n`;
+        for (const w of warnings.slice(0, 5)) {
+          const date = w.warnedAt ? new Date(w.warnedAt).toLocaleDateString() : 'Unknown';
+          response += `- ${date}: ${w.reason} (by ${w.warnedByUser.username})${w.isActive ? '' : ' [cleared]'}\n`;
+        }
+        if (warnings.length > 5) response += `...and ${warnings.length - 5} more\n`;
+        response += `\n`;
+      }
+
+      if (steals.length > 0) {
+        response += `**Steal History:**\n`;
+        for (const s of steals.slice(0, 5)) {
+          const date = s.createdAt ? new Date(s.createdAt).toLocaleDateString() : 'Unknown';
+          response += `- ${date}: ${s.item}${s.notes ? ` (${s.notes})` : ''} - logged by ${s.staffUser.username}\n`;
+        }
+        if (steals.length > 5) response += `...and ${steals.length - 5} more\n`;
+      }
+
+      if (warnings.length === 0 && steals.length === 0) {
+        response += `No warnings or steals on record.`;
+      }
+
+      await interaction.reply({ content: response, ephemeral: true });
+    }
+
+    if (interaction.commandName === 'modlog') {
+      const limit = interaction.options.getInteger('limit') || 10;
+      const logs = await storage.getAuditLogs(Math.min(limit, 25));
+
+      if (logs.length === 0) {
+        await interaction.reply({ content: "No moderation actions recorded yet.", ephemeral: true });
+        return;
+      }
+
+      let response = `**Recent Moderation Actions** (${logs.length})\n━━━━━━━━━━━━━━━━━━━━━━\n`;
+      for (const log of logs) {
+        const date = log.createdAt ? new Date(log.createdAt).toLocaleDateString() : 'Unknown';
+        const target = log.targetUser ? ` on ${log.targetUser.username}` : '';
+        const details = log.details as any;
+        const reason = details?.reason ? ` - ${details.reason}` : '';
+        response += `**${log.action.toUpperCase()}**${target} by ${log.admin.username} (${date})${reason}\n`;
+      }
+
+      await interaction.reply({ content: response, ephemeral: true });
+    }
+
+    return;
   }
 
 }

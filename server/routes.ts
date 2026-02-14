@@ -9,7 +9,6 @@ export async function registerRoutes(
   app: Express
 ): Promise<Server> {
   
-  // API Routes for Dashboard
   app.get(api.reservations.list.path, async (req, res) => {
     const reservations = await storage.getReservations();
     res.json(reservations);
@@ -32,7 +31,41 @@ export async function registerRoutes(
     res.json(stats);
   });
 
-  // Start the Discord Bot
+  app.get(api.moderation.auditLogs.path, async (req, res) => {
+    const logs = await storage.getAuditLogs(200);
+    res.json(logs);
+  });
+
+  app.get(api.moderation.warnings.path, async (req, res) => {
+    const warnings = await storage.getAllWarnings();
+    res.json(warnings);
+  });
+
+  app.get(api.moderation.bans.path, async (req, res) => {
+    const bans = await storage.getBannedUsers();
+    res.json(bans);
+  });
+
+  app.get(api.moderation.mutes.path, async (req, res) => {
+    const mutes = await storage.getMutedUsers();
+    res.json(mutes);
+  });
+
+  app.get(api.steals.list.path, async (req, res) => {
+    const steals = await storage.getAllSteals();
+    res.json(steals);
+  });
+
+  app.get('/api/steals/user/:discordId', async (req, res) => {
+    const user = await storage.getUserByDiscordId(req.params.discordId);
+    if (!user) {
+      res.json({ user: null, steals: [], totalSteals: 0 });
+      return;
+    }
+    const steals = await storage.getUserSteals(user.id);
+    res.json({ user, steals, totalSteals: steals.length });
+  });
+
   startBot().catch(err => console.error("Failed to start bot:", err));
 
   return httpServer;
