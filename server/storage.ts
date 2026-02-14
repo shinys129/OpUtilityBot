@@ -63,7 +63,7 @@ export interface IStorage {
   isUserMuted(userId: number): Promise<boolean>;
   getMutedUsers(): Promise<(UserMute & { user: User; mutedByUser: User })[]>;
 
-  addSteal(userId: number, staffId: number, item: string, notes?: string): Promise<StealLog>;
+  addSteal(userId: number, staffId: number, item: string, paid: boolean, notes?: string): Promise<StealLog>;
   getUserSteals(userId: number): Promise<(StealLog & { user: User; staffUser: User })[]>;
   getAllSteals(): Promise<(StealLog & { user: User; staffUser: User })[]>;
 
@@ -317,9 +317,9 @@ export class DatabaseStorage implements IStorage {
     })).filter(r => r.user && r.mutedByUser);
   }
 
-  async addSteal(userId: number, staffId: number, item: string, notes?: string): Promise<StealLog> {
+  async addSteal(userId: number, staffId: number, item: string, paid: boolean, notes?: string): Promise<StealLog> {
     const [steal] = await db.insert(stealLogs)
-      .values({ userId, staffId, item, notes })
+      .values({ userId, staffId, item, paid, notes })
       .returning();
     return steal;
   }

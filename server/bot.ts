@@ -220,6 +220,7 @@ async function registerSlashCommands() {
        options: [
          { name: 'user', description: 'The user who stole.', type: 6, required: true },
          { name: 'item', description: 'What was stolen.', type: 3, required: true },
+         { name: 'paid', description: 'Did they pay for it?', type: 5, required: true },
          { name: 'notes', description: 'Additional notes.', type: 3, required: false },
        ],
      });
@@ -1480,16 +1481,18 @@ async function handleSlashCommand(interaction: any) {
     if (interaction.commandName === 'steal') {
       const targetDiscordUser = interaction.options.getUser('user');
       const item = interaction.options.getString('item');
+      const paid = interaction.options.getBoolean('paid') ?? false;
       const notes = interaction.options.getString('notes');
       const targetUser = await storage.getOrCreateUser(targetDiscordUser.id, targetDiscordUser.username);
 
-      await storage.addSteal(targetUser.id, staffUser.id, item, notes || undefined);
-      await storage.createAuditLog(staffUser.id, 'steal_logged', targetUser.id, { item, notes });
+      await storage.addSteal(targetUser.id, staffUser.id, item, paid, notes || undefined);
+      await storage.createAuditLog(staffUser.id, 'steal_logged', targetUser.id, { item, paid, notes });
 
       const allSteals = await storage.getUserSteals(targetUser.id);
+      const paidText = paid ? 'Yes' : 'No';
 
       await interaction.reply({
-        content: `**Steal Logged**\nUser: <@${targetDiscordUser.id}>\nItem: ${item}${notes ? `\nNotes: ${notes}` : ''}\nTotal steals on record: ${allSteals.length}`,
+        content: `**Steal Logged**\nUser: <@${targetDiscordUser.id}>\nItem: ${item}\nPaid: ${paidText}${notes ? `\nNotes: ${notes}` : ''}\nTotal steals on record: ${allSteals.length}`,
         ephemeral: false,
       });
     }

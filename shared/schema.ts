@@ -82,6 +82,7 @@ export const stealLogs = pgTable("steal_logs", {
   staffId: integer("staff_id").references(() => users.id).notNull(),
   item: text("item").notNull(),
   notes: text("notes"),
+  paid: boolean("paid").default(false),
   createdAt: timestamp("created_at").defaultNow(),
 });
 

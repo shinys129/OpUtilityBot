@@ -122,6 +122,7 @@ export default function StealLog() {
                             <TableHeader className="bg-secondary/50">
                               <TableRow className="hover:bg-transparent border-border/50">
                                 <TableHead className="text-muted-foreground font-semibold">Item Stolen</TableHead>
+                                <TableHead className="text-muted-foreground font-semibold">Paid</TableHead>
                                 <TableHead className="text-muted-foreground font-semibold">Notes</TableHead>
                                 <TableHead className="text-muted-foreground font-semibold">Logged By</TableHead>
                                 <TableHead className="text-right text-muted-foreground font-semibold">Date</TableHead>
@@ -131,6 +132,7 @@ export default function StealLog() {
                               {lookupResult.steals.map((s: any) => (
                                 <TableRow key={s.id} className="hover:bg-white/5 border-border/50" data-testid={`row-lookup-steal-${s.id}`}>
                                   <TableCell><span className="text-sm font-medium">{s.item}</span></TableCell>
+                                  <TableCell>{s.paid ? <Badge variant="outline" className="bg-green-500/20 text-green-300 border-green-500/30">Paid</Badge> : <Badge variant="outline" className="bg-red-500/20 text-red-300 border-red-500/30">Not Paid</Badge>}</TableCell>
                                   <TableCell>
                                     {s.notes ? (
                                       <div className="flex items-center gap-1.5 text-sm text-muted-foreground">
@@ -185,6 +187,7 @@ export default function StealLog() {
                   <TableRow className="hover:bg-transparent border-border/50">
                     <TableHead className="text-muted-foreground font-semibold">User</TableHead>
                     <TableHead className="text-muted-foreground font-semibold">Item Stolen</TableHead>
+                    <TableHead className="text-muted-foreground font-semibold">Paid</TableHead>
                     <TableHead className="text-muted-foreground font-semibold">Notes</TableHead>
                     <TableHead className="text-muted-foreground font-semibold">Logged By</TableHead>
                     <TableHead className="text-right text-muted-foreground font-semibold">Date</TableHead>
@@ -192,7 +195,7 @@ export default function StealLog() {
                 </TableHeader>
                 <TableBody>
                   {steals.length === 0 ? (
-                    <TableRow><TableCell colSpan={5} className="h-32 text-center text-muted-foreground">No steals recorded yet.</TableCell></TableRow>
+                    <TableRow><TableCell colSpan={6} className="h-32 text-center text-muted-foreground">No steals recorded yet.</TableCell></TableRow>
                   ) : (
                     steals.map((s: any, index: number) => (
                       <motion.tr key={s.id} initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: index * 0.03 }} className="group hover:bg-white/5 border-border/50 transition-colors" data-testid={`row-steal-${s.id}`}>
@@ -203,6 +206,7 @@ export default function StealLog() {
                           </div>
                         </TableCell>
                         <TableCell><span className="text-sm font-medium">{s.item}</span></TableCell>
+                        <TableCell>{s.paid ? <Badge variant="outline" className="bg-green-500/20 text-green-300 border-green-500/30">Paid</Badge> : <Badge variant="outline" className="bg-red-500/20 text-red-300 border-red-500/30">Not Paid</Badge>}</TableCell>
                         <TableCell>
                           {s.notes ? (
                             <div className="flex items-center gap-1.5 text-sm text-muted-foreground">
