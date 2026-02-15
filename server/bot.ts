@@ -1,4 +1,4 @@
-import { Client, GatewayIntentBits, Events, ActionRowBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder, Interaction, Message, TextChannel, StringSelectMenuBuilder, PermissionFlagsBits, type Collection, type Snowflake } from "discord.js";
+import { Client, GatewayIntentBits, Events, ActionRowBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder, Interaction, Message, TextChannel, StringSelectMenuBuilder, PermissionFlagsBits, MessageFlags, type Collection, type Snowflake } from "discord.js";
 import type { Message as DiscordMessage } from "discord.js";
 import { storage } from "./storage";
 
@@ -643,12 +643,12 @@ async function updateOrgEmbed(channel: TextChannel, messageId: string) {
 async function handleSlashCommand(interaction: any) {
   if (interaction.commandName === 'setadminrole') {
     if (!interaction.member?.permissions.has(PermissionFlagsBits.ManageGuild)) {
-      await interaction.reply({ content: "You need 'Manage Server' permissions to use this command.", ephemeral: true });
+      await interaction.reply({ content: "You need 'Manage Server' permissions to use this command.", flags: MessageFlags.Ephemeral });
       return;
     }
     const role = interaction.options.getRole('role');
     await storage.setAdminRole(role.id);
-    await interaction.reply({ content: `✅ Admin role set to <@&${role.id}>.`, ephemeral: true });
+    await interaction.reply({ content: `✅ Admin role set to <@&${role.id}>.`, flags: MessageFlags.Ephemeral });
     return;
   }
 
@@ -657,7 +657,7 @@ async function handleSlashCommand(interaction: any) {
 
   if (interaction.commandName === 'startorg') {
     if (!(interaction.channel instanceof TextChannel)) {
-      await interaction.reply({ content: "This command only works in text channels.", ephemeral: true });
+      await interaction.reply({ content: "This command only works in text channels.", flags: MessageFlags.Ephemeral });
       return;
     }
 
@@ -678,7 +678,7 @@ async function handleSlashCommand(interaction: any) {
     }
 
     if (!isAdmin) {
-      await interaction.reply({ content: "You do not have permission to start an organization.", ephemeral: true });
+      await interaction.reply({ content: "You do not have permission to start an organization.", flags: MessageFlags.Ephemeral });
       return;
     }
 
@@ -758,7 +758,7 @@ async function handleSlashCommand(interaction: any) {
 
   if (interaction.commandName === 'refreshorg') {
     if (!(interaction.channel instanceof TextChannel)) {
-      await interaction.reply({ content: "This command only works in text channels.", ephemeral: true });
+      await interaction.reply({ content: "This command only works in text channels.", flags: MessageFlags.Ephemeral });
       return;
     }
 
@@ -779,12 +779,12 @@ async function handleSlashCommand(interaction: any) {
     }
 
     if (!isAdmin) {
-      await interaction.reply({ content: "You do not have permission to refresh the organization.", ephemeral: true });
+      await interaction.reply({ content: "You do not have permission to refresh the organization.", flags: MessageFlags.Ephemeral });
       return;
     }
 
     try {
-      await interaction.deferReply({ ephemeral: true });
+      await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
       const orgMessage = await findOrgMessage(interaction.channel);
       if (!orgMessage) {
@@ -805,7 +805,7 @@ async function handleSlashCommand(interaction: any) {
   // New: /reloadorg - recreate the org embed if it's stuck or missing
   if (interaction.commandName === 'reloadorg') {
     if (!(interaction.channel instanceof TextChannel)) {
-      await interaction.reply({ content: "This command only works in text channels.", ephemeral: true });
+      await interaction.reply({ content: "This command only works in text channels.", flags: MessageFlags.Ephemeral });
       return;
     }
 
@@ -826,7 +826,7 @@ async function handleSlashCommand(interaction: any) {
     }
 
     if (!isAdmin) {
-      await interaction.reply({ content: "You do not have permission to reload the organization.", ephemeral: true });
+      await interaction.reply({ content: "You do not have permission to reload the organization.", flags: MessageFlags.Ephemeral });
       return;
     }
 
@@ -913,7 +913,7 @@ async function handleSlashCommand(interaction: any) {
       
       // Send a follow-up message to confirm
       try {
-        await interaction.followUp({ content: "✅ Embed reloaded successfully! All reservation data has been preserved.", ephemeral: true });
+        await interaction.followUp({ content: "✅ Embed reloaded successfully! All reservation data has been preserved.", flags: MessageFlags.Ephemeral });
       } catch (followUpError) {
         console.error("Failed to send follow-up:", followUpError);
         // The embed was created successfully, so we don't need to show an error to the user
@@ -922,9 +922,9 @@ async function handleSlashCommand(interaction: any) {
       console.error("Failed to reload embed:", error);
       try {
         if (interaction.replied || interaction.deferred) {
-          await interaction.followUp({ content: "Failed to reload embed. Please try again or use `/startorg`.", ephemeral: true });
+          await interaction.followUp({ content: "Failed to reload embed. Please try again or use `/startorg`.", flags: MessageFlags.Ephemeral });
         } else {
-          await interaction.reply({ content: "Failed to reload embed. Please try again or use `/startorg`.", ephemeral: true });
+          await interaction.reply({ content: "Failed to reload embed. Please try again or use `/startorg`.", flags: MessageFlags.Ephemeral });
         }
       } catch (e) {
         // ignore
@@ -937,7 +937,7 @@ async function handleSlashCommand(interaction: any) {
     const discordId = interaction.user.id;
     const user = await storage.getUserByDiscordId(discordId);
     if (!user) {
-      await interaction.reply({ content: "You have no reservations to manage.", ephemeral: true });
+      await interaction.reply({ content: "You have no reservations to manage.", flags: MessageFlags.Ephemeral });
       return;
     }
 
@@ -946,7 +946,7 @@ async function handleSlashCommand(interaction: any) {
     const userReservations = allReservations.filter(r => r.userId === user.id);
     
     if (userReservations.length === 0) {
-      await interaction.reply({ content: "No active reservation found.", ephemeral: true });
+      await interaction.reply({ content: "No active reservation found.", flags: MessageFlags.Ephemeral });
       return;
     }
 
@@ -971,7 +971,7 @@ async function handleSlashCommand(interaction: any) {
     await interaction.reply({ 
       content: "Select a reservation to manage. You can change your Pokemon selection or fully cancel it:", 
       components: [row], 
-      ephemeral: true 
+      flags: MessageFlags.Ephemeral 
     });
   }
 
@@ -999,14 +999,14 @@ async function handleSlashCommand(interaction: any) {
     console.log("[endorg] isAdmin:", isAdmin);
 
     if (!isAdmin) {
-      await interaction.reply({ content: "You do not have permission to end the organization.", ephemeral: true });
+      await interaction.reply({ content: "You do not have permission to end the organization.", flags: MessageFlags.Ephemeral });
       return;
     }
 
     // Defer reply immediately to prevent timeout
     try {
       console.log("[endorg] Deferring reply...");
-      await interaction.deferReply({ ephemeral: true });
+      await interaction.deferReply({ flags: MessageFlags.Ephemeral });
       console.log("[endorg] Reply deferred successfully");
     } catch (deferErr) {
       console.error("[endorg] Failed to defer reply:", deferErr);
@@ -1101,7 +1101,7 @@ async function handleSlashCommand(interaction: any) {
     }
 
     if (!isAdmin) {
-      await interaction.reply({ content: "You do not have permission to set channels.", ephemeral: true });
+      await interaction.reply({ content: "You do not have permission to set channels.", flags: MessageFlags.Ephemeral });
       return;
     }
 
@@ -1112,13 +1112,13 @@ async function handleSlashCommand(interaction: any) {
     const ids: string[] = Array.from(new Set((channelsRaw.match(/\d{17,19}/g) || []).map((s: string) => s.trim())));
 
     if (ids.length === 0) {
-      await interaction.reply({ content: "No channel IDs found in the channels parameter. Provide channel mentions or channel IDs separated by commas.", ephemeral: true });
+      await interaction.reply({ content: "No channel IDs found in the channels parameter. Provide channel mentions or channel IDs separated by commas.", flags: MessageFlags.Ephemeral });
       return;
     }
 
     try {
       await storage.setCategoryChannels(category, ids);
-      await interaction.reply({ content: `Registered ${ids.length} channels for category ${category}.`, ephemeral: true });
+      await interaction.reply({ content: `Registered ${ids.length} channels for category ${category}.`, flags: MessageFlags.Ephemeral });
 
       // Try to update any org embed in this channel to show progress
       if (interaction.channel instanceof TextChannel) {
@@ -1130,7 +1130,7 @@ async function handleSlashCommand(interaction: any) {
       }
     } catch (err) {
       console.error("Failed to set category channels:", err);
-      await interaction.reply({ content: "Failed to register channels. Try again later.", ephemeral: true });
+      await interaction.reply({ content: "Failed to register channels. Try again later.", flags: MessageFlags.Ephemeral });
     }
   }
 
@@ -1152,7 +1152,7 @@ async function handleSlashCommand(interaction: any) {
     }
 
     if (!isAdmin) {
-      await interaction.reply({ content: "You do not have permission to view channel mappings.", ephemeral: true });
+      await interaction.reply({ content: "You do not have permission to view channel mappings.", flags: MessageFlags.Ephemeral });
       return;
     }
 
@@ -1165,7 +1165,7 @@ async function handleSlashCommand(interaction: any) {
       if (categoryFilter) {
         const catChecks = checks.filter(c => c.category === categoryFilter);
         if (catChecks.length === 0) {
-          await interaction.reply({ content: `No channels registered for category "${categoryFilter}".`, ephemeral: true });
+          await interaction.reply({ content: `No channels registered for category "${categoryFilter}".`, flags: MessageFlags.Ephemeral });
           return;
         }
 
@@ -1175,7 +1175,7 @@ async function handleSlashCommand(interaction: any) {
           return `${status} <#${c.channelId}> (\`${c.channelId}\`)`;
         });
 
-        await interaction.reply({ content: `Channels for **${categoryFilter}**:\n${lines.join('\n')}`, ephemeral: true });
+        await interaction.reply({ content: `Channels for **${categoryFilter}**:\n${lines.join('\n')}`, flags: MessageFlags.Ephemeral });
         return;
       }
 
@@ -1186,7 +1186,7 @@ async function handleSlashCommand(interaction: any) {
       }, {});
 
       if (Object.keys(byCategory).length === 0) {
-        await interaction.reply({ content: "No channel mappings registered.", ephemeral: true });
+        await interaction.reply({ content: "No channel mappings registered.", flags: MessageFlags.Ephemeral });
         return;
       }
 
@@ -1199,10 +1199,10 @@ async function handleSlashCommand(interaction: any) {
         chunks.push(`${header}\n${lines.join('\n')}`);
       }
 
-      await interaction.reply({ content: chunks.join('\n\n'), ephemeral: true });
+      await interaction.reply({ content: chunks.join('\n\n'), flags: MessageFlags.Ephemeral });
     } catch (err) {
       console.error("Failed to show channel mappings:", err);
-      await interaction.reply({ content: "Failed to retrieve channel mappings. Try again later.", ephemeral: true });
+      await interaction.reply({ content: "Failed to retrieve channel mappings. Try again later.", flags: MessageFlags.Ephemeral });
     }
   }
 
@@ -1225,13 +1225,13 @@ async function handleSlashCommand(interaction: any) {
     }
 
     if (!hasPermission) {
-      await interaction.reply({ content: "❌ You do not have permission to lock this channel.", ephemeral: true });
+      await interaction.reply({ content: "❌ You do not have permission to lock this channel.", flags: MessageFlags.Ephemeral });
       return;
     }
 
     // Check if the command is used in a text channel
     if (!(interaction.channel instanceof TextChannel)) {
-      await interaction.reply({ content: "❌ This command can only be used in text channels.", ephemeral: true });
+      await interaction.reply({ content: "❌ This command can only be used in text channels.", flags: MessageFlags.Ephemeral });
       return;
     }
 
@@ -1256,7 +1256,7 @@ async function handleSlashCommand(interaction: any) {
       await interaction.channel.send("This channel is now locked. Please refrain from sending messages until it is unlocked.");
     } catch (err) {
       console.error("Failed to lock channel:", err);
-      await interaction.reply({ content: "❌ Failed to lock the channel. Please try again or check bot permissions.", ephemeral: true });
+      await interaction.reply({ content: "❌ Failed to lock the channel. Please try again or check bot permissions.", flags: MessageFlags.Ephemeral });
     }
   }
 
@@ -1279,13 +1279,13 @@ async function handleSlashCommand(interaction: any) {
     }
 
     if (!hasPermission) {
-      await interaction.reply({ content: "❌ You do not have permission to unlock this channel.", ephemeral: true });
+      await interaction.reply({ content: "❌ You do not have permission to unlock this channel.", flags: MessageFlags.Ephemeral });
       return;
     }
 
     // Check if the command is used in a text channel
     if (!(interaction.channel instanceof TextChannel)) {
-      await interaction.reply({ content: "❌ This command can only be used in text channels.", ephemeral: true });
+      await interaction.reply({ content: "❌ This command can only be used in text channels.", flags: MessageFlags.Ephemeral });
       return;
     }
 
@@ -1310,7 +1310,7 @@ async function handleSlashCommand(interaction: any) {
       await interaction.reply({ content: "🔓 **This channel has been unlocked!**", ephemeral: false });
     } catch (err) {
       console.error("Failed to unlock channel:", err);
-      await interaction.reply({ content: "❌ Failed to unlock the channel. Please try again or check bot permissions.", ephemeral: true });
+      await interaction.reply({ content: "❌ Failed to unlock the channel. Please try again or check bot permissions.", flags: MessageFlags.Ephemeral });
     }
   }
 
@@ -1333,13 +1333,13 @@ async function handleSlashCommand(interaction: any) {
     }
 
     if (!hasPermission) {
-      await interaction.reply({ content: "❌ You do not have permission to use orglock.", ephemeral: true });
+      await interaction.reply({ content: "❌ You do not have permission to use orglock.", flags: MessageFlags.Ephemeral });
       return;
     }
 
     // Check if the command is used in a text channel
     if (!(interaction.channel instanceof TextChannel)) {
-      await interaction.reply({ content: "❌ This command can only be used in text channels.", ephemeral: true });
+      await interaction.reply({ content: "❌ This command can only be used in text channels.", flags: MessageFlags.Ephemeral });
       return;
     }
 
@@ -1366,7 +1366,7 @@ async function handleSlashCommand(interaction: any) {
       console.log("Channel locked successfully with orglock command");
     } catch (err) {
       console.error("Failed to execute orglock command:", err);
-      await interaction.reply({ content: "❌ Failed to execute orglock command. Please try again or check bot permissions.", ephemeral: true });
+      await interaction.reply({ content: "❌ Failed to execute orglock command. Please try again or check bot permissions.", flags: MessageFlags.Ephemeral });
     }
   }
 
@@ -1392,7 +1392,7 @@ async function handleSlashCommand(interaction: any) {
         await interaction.reply({ content: fallbackMessage, ephemeral: false });
       } catch (fallbackErr) {
         console.error("Failed to send fallback message:", fallbackErr);
-        await interaction.reply({ content: "❌ Failed to send message. Please try again.", ephemeral: true });
+        await interaction.reply({ content: "❌ Failed to send message. Please try again.", flags: MessageFlags.Ephemeral });
       }
     }
   }
@@ -1419,7 +1419,7 @@ async function handleSlashCommand(interaction: any) {
         await interaction.reply({ content: fallbackMessage, ephemeral: false });
       } catch (fallbackErr) {
         console.error("Failed to send fallback message:", fallbackErr);
-        await interaction.reply({ content: "❌ Failed to send message. Please try again.", ephemeral: true });
+        await interaction.reply({ content: "❌ Failed to send message. Please try again.", flags: MessageFlags.Ephemeral });
       }
     }
   }
@@ -1443,7 +1443,7 @@ async function handleSlashCommand(interaction: any) {
         .setTitle('Permission Denied')
         .setDescription('You do not have permission to use this command.')
         .setTimestamp();
-      await interaction.reply({ embeds: [noPermEmbed], ephemeral: true });
+      await interaction.reply({ embeds: [noPermEmbed], flags: MessageFlags.Ephemeral });
       return;
     }
 
@@ -1488,7 +1488,7 @@ async function handleSlashCommand(interaction: any) {
       if (durationInput) {
         const parsed = parseDuration(durationInput);
         if (!parsed) {
-          await interaction.reply({ embeds: [new EmbedBuilder().setColor(0xED4245).setDescription('Invalid duration format. Use e.g. `30m`, `2h`, `7d`.')], ephemeral: true });
+          await interaction.reply({ embeds: [new EmbedBuilder().setColor(0xED4245).setDescription('Invalid duration format. Use e.g. `30m`, `2h`, `7d`.')], flags: MessageFlags.Ephemeral });
           return;
         }
         durationMinutes = parsed.minutes;
@@ -1531,13 +1531,13 @@ async function handleSlashCommand(interaction: any) {
       const targetUser = await storage.getUserByDiscordId(targetDiscordUser.id);
 
       if (!targetUser) {
-        await interaction.reply({ embeds: [new EmbedBuilder().setColor(0xED4245).setDescription('User not found in the system.')], ephemeral: true });
+        await interaction.reply({ embeds: [new EmbedBuilder().setColor(0xED4245).setDescription('User not found in the system.')], flags: MessageFlags.Ephemeral });
         return;
       }
 
       const isMuted = await storage.isUserMuted(targetUser.id);
       if (!isMuted) {
-        await interaction.reply({ embeds: [new EmbedBuilder().setColor(0xED4245).setDescription('This user is not currently muted.')], ephemeral: true });
+        await interaction.reply({ embeds: [new EmbedBuilder().setColor(0xED4245).setDescription('This user is not currently muted.')], flags: MessageFlags.Ephemeral });
         return;
       }
 
@@ -1577,7 +1577,7 @@ async function handleSlashCommand(interaction: any) {
 
       const alreadyBanned = await storage.isUserBanned(targetUser.id);
       if (alreadyBanned) {
-        await interaction.reply({ embeds: [new EmbedBuilder().setColor(0xED4245).setDescription('This user is already banned.')], ephemeral: true });
+        await interaction.reply({ embeds: [new EmbedBuilder().setColor(0xED4245).setDescription('This user is already banned.')], flags: MessageFlags.Ephemeral });
         return;
       }
 
@@ -1586,7 +1586,7 @@ async function handleSlashCommand(interaction: any) {
       if (durationInput) {
         const parsed = parseDuration(durationInput);
         if (!parsed) {
-          await interaction.reply({ embeds: [new EmbedBuilder().setColor(0xED4245).setDescription('Invalid duration format. Use e.g. `7d`, `30d`, `24h`.')], ephemeral: true });
+          await interaction.reply({ embeds: [new EmbedBuilder().setColor(0xED4245).setDescription('Invalid duration format. Use e.g. `7d`, `30d`, `24h`.')], flags: MessageFlags.Ephemeral });
           return;
         }
         expiresAt = new Date(Date.now() + parsed.minutes * 60 * 1000);
@@ -1617,13 +1617,13 @@ async function handleSlashCommand(interaction: any) {
       const targetUser = await storage.getUserByDiscordId(targetDiscordUser.id);
 
       if (!targetUser) {
-        await interaction.reply({ embeds: [new EmbedBuilder().setColor(0xED4245).setDescription('User not found in the system.')], ephemeral: true });
+        await interaction.reply({ embeds: [new EmbedBuilder().setColor(0xED4245).setDescription('User not found in the system.')], flags: MessageFlags.Ephemeral });
         return;
       }
 
       const isBanned = await storage.isUserBanned(targetUser.id);
       if (!isBanned) {
-        await interaction.reply({ embeds: [new EmbedBuilder().setColor(0xED4245).setDescription('This user is not currently banned.')], ephemeral: true });
+        await interaction.reply({ embeds: [new EmbedBuilder().setColor(0xED4245).setDescription('This user is not currently banned.')], flags: MessageFlags.Ephemeral });
         return;
       }
 
@@ -1682,14 +1682,14 @@ async function handleSlashCommand(interaction: any) {
 
       const parsed = parseDuration(durationInput);
       if (!parsed) {
-        await interaction.reply({ embeds: [new EmbedBuilder().setColor(0xED4245).setDescription('Invalid duration format. Use e.g. `30m`, `2h`, `7d`.')], ephemeral: true });
+        await interaction.reply({ embeds: [new EmbedBuilder().setColor(0xED4245).setDescription('Invalid duration format. Use e.g. `30m`, `2h`, `7d`.')], flags: MessageFlags.Ephemeral });
         return;
       }
 
       try {
         const guild = interaction.guild;
         if (!guild) {
-          await interaction.reply({ embeds: [new EmbedBuilder().setColor(0xED4245).setDescription('This command can only be used in a server.')], ephemeral: true });
+          await interaction.reply({ embeds: [new EmbedBuilder().setColor(0xED4245).setDescription('This command can only be used in a server.')], flags: MessageFlags.Ephemeral });
           return;
         }
 
@@ -1720,7 +1720,7 @@ async function handleSlashCommand(interaction: any) {
         await sendModLog(interaction.client, embed);
       } catch (e) {
         console.error("Failed to timeout user:", e);
-        await interaction.reply({ embeds: [new EmbedBuilder().setColor(0xED4245).setDescription('Failed to timeout user. Make sure the bot has the required permissions and the user can be timed out.')], ephemeral: true });
+        await interaction.reply({ embeds: [new EmbedBuilder().setColor(0xED4245).setDescription('Failed to timeout user. Make sure the bot has the required permissions and the user can be timed out.')], flags: MessageFlags.Ephemeral });
       }
     }
 
@@ -1730,7 +1730,7 @@ async function handleSlashCommand(interaction: any) {
       const targetUser = await storage.getUserByDiscordId(targetDiscordUser.id);
 
       if (!targetUser) {
-        await interaction.reply({ embeds: [new EmbedBuilder().setColor(0xED4245).setDescription('User not found in the system.')], ephemeral: true });
+        await interaction.reply({ embeds: [new EmbedBuilder().setColor(0xED4245).setDescription('User not found in the system.')], flags: MessageFlags.Ephemeral });
         return;
       }
 
@@ -1740,7 +1740,7 @@ async function handleSlashCommand(interaction: any) {
         const warning = warnings.find(w => w.id === warningId);
 
         if (!warning) {
-          await interaction.reply({ embeds: [new EmbedBuilder().setColor(0xED4245).setDescription(`Warning #${warningId} not found for this user.`)], ephemeral: true });
+          await interaction.reply({ embeds: [new EmbedBuilder().setColor(0xED4245).setDescription(`Warning #${warningId} not found for this user.`)], flags: MessageFlags.Ephemeral });
           return;
         }
 
@@ -1770,7 +1770,7 @@ async function handleSlashCommand(interaction: any) {
         const steal = steals.find(s => s.id === stealId);
 
         if (!steal) {
-          await interaction.reply({ embeds: [new EmbedBuilder().setColor(0xED4245).setDescription(`Steal #${stealId} not found for this user.`)], ephemeral: true });
+          await interaction.reply({ embeds: [new EmbedBuilder().setColor(0xED4245).setDescription(`Steal #${stealId} not found for this user.`)], flags: MessageFlags.Ephemeral });
           return;
         }
 
@@ -1820,7 +1820,7 @@ async function handleSlashCommand(interaction: any) {
       const targetUser = await storage.getUserByDiscordId(targetDiscordUser.id);
 
       if (!targetUser) {
-        await interaction.reply({ embeds: [new EmbedBuilder().setColor(0x5865F2).setDescription(`No records found for <@${targetDiscordUser.id}>.`)], ephemeral: true });
+        await interaction.reply({ embeds: [new EmbedBuilder().setColor(0x5865F2).setDescription(`No records found for <@${targetDiscordUser.id}>.`)], flags: MessageFlags.Ephemeral });
         return;
       }
 
@@ -1873,7 +1873,7 @@ async function handleSlashCommand(interaction: any) {
       }
 
       embed.setFooter({ text: `User ID: ${targetDiscordUser.id}` }).setTimestamp();
-      await interaction.reply({ embeds: [embed], ephemeral: true });
+      await interaction.reply({ embeds: [embed], flags: MessageFlags.Ephemeral });
     }
 
     if (interaction.commandName === 'modlog') {
@@ -1881,7 +1881,7 @@ async function handleSlashCommand(interaction: any) {
       const logs = await storage.getAuditLogs(Math.min(limit, 25));
 
       if (logs.length === 0) {
-        await interaction.reply({ embeds: [new EmbedBuilder().setColor(0x5865F2).setDescription('No moderation actions recorded yet.')], ephemeral: true });
+        await interaction.reply({ embeds: [new EmbedBuilder().setColor(0x5865F2).setDescription('No moderation actions recorded yet.')], flags: MessageFlags.Ephemeral });
         return;
       }
 
@@ -1911,7 +1911,7 @@ async function handleSlashCommand(interaction: any) {
         .setFooter({ text: `Showing ${logs.length} entries` })
         .setTimestamp();
 
-      await interaction.reply({ embeds: [embed], ephemeral: true });
+      await interaction.reply({ embeds: [embed], flags: MessageFlags.Ephemeral });
     }
 
     return;
@@ -1940,18 +1940,18 @@ async function handleButton(interaction: any) {
     };
     const choice = map[raw];
     if (!choice) {
-      await interaction.reply({ content: 'Unknown Gigantamax choice.', ephemeral: true });
+      await interaction.reply({ content: 'Unknown Gigantamax choice.', flags: MessageFlags.Ephemeral });
       return;
     }
 
     const reservation = await storage.getReservationByUser(user.id);
     if (!reservation || reservation.category !== 'Gmax') {
-      await interaction.reply({ content: 'No active Gmax reservation found to set this choice.', ephemeral: true });
+      await interaction.reply({ content: 'No active Gmax reservation found to set this choice.', flags: MessageFlags.Ephemeral });
       return;
     }
 
     await storage.updateReservation(reservation.id, { additionalPokemon: choice });
-    await interaction.reply({ content: `Set your Gigantamax Rare choice to ${choice}. **You may now use !res to select your additional reserve**.`, ephemeral: true });
+    await interaction.reply({ content: `Set your Gigantamax Rare choice to ${choice}. **You may now use !res to select your additional reserve**.`, flags: MessageFlags.Ephemeral });
 
     // update embed if present
     if (interaction.channel instanceof TextChannel) {
@@ -1974,24 +1974,24 @@ async function handleButton(interaction: any) {
     };
     const choice = map[raw];
     if (!choice) {
-      await interaction.reply({ content: 'Unknown Galarian bird choice.', ephemeral: true });
+      await interaction.reply({ content: 'Unknown Galarian bird choice.', flags: MessageFlags.Ephemeral });
       return;
     }
 
     const reservation = await storage.getReservationByUser(user.id);
     if (!reservation || reservation.category !== 'Regionals') {
       console.log("Galarian bird check failed:", { hasReservation: !!reservation, category: reservation?.category, subCategory: reservation?.subCategory });
-      await interaction.reply({ content: 'No active Regional reservation found to set this choice.', ephemeral: true });
+      await interaction.reply({ content: 'No active Regional reservation found to set this choice.', flags: MessageFlags.Ephemeral });
       return;
     }
 
     await storage.updateReservation(reservation.id, { additionalPokemon: choice });
     // Only Standard Regional gets extra reserve via !res
     if (reservation.subCategory === 'standard') {
-      await interaction.reply({ content: `Set your Galarian bird choice to ${choice}. **You may now use !res to select your additional reserve**.`, ephemeral: true });
+      await interaction.reply({ content: `Set your Galarian bird choice to ${choice}. **You may now use !res to select your additional reserve**.`, flags: MessageFlags.Ephemeral });
     } else {
       // Galarian sub-category - no extra reserve
-      await interaction.reply({ content: `Set your Galarian bird choice to ${choice}.`, ephemeral: true });
+      await interaction.reply({ content: `Set your Galarian bird choice to ${choice}.`, flags: MessageFlags.Ephemeral });
     }
 
     // update embed if present
@@ -2025,7 +2025,7 @@ async function handleButton(interaction: any) {
     }
 
     if (!isAdmin) {
-      await interaction.reply({ content: "You do not have permission to manage reservations.", ephemeral: true });
+      await interaction.reply({ content: "You do not have permission to manage reservations.", flags: MessageFlags.Ephemeral });
       return;
     }
 
@@ -2038,7 +2038,7 @@ async function handleButton(interaction: any) {
     }));
 
     if (options.length === 0) {
-      await interaction.reply({ content: "No reservations available to manage.", ephemeral: true });
+      await interaction.reply({ content: "No reservations available to manage.", flags: MessageFlags.Ephemeral });
       return;
     }
 
@@ -2051,7 +2051,7 @@ async function handleButton(interaction: any) {
 
     const row = new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(select);
 
-    await interaction.reply({ content: "Select a reservation to cancel:", components: [row], ephemeral: true });
+    await interaction.reply({ content: "Select a reservation to cancel:", components: [row], flags: MessageFlags.Ephemeral });
     return;
   }
 
@@ -2071,7 +2071,7 @@ async function handleButton(interaction: any) {
     } catch (e) {}
 
     if (!isAdmin) {
-      await interaction.reply({ content: "Only staff can use this button.", ephemeral: true });
+      await interaction.reply({ content: "Only staff can use this button.", flags: MessageFlags.Ephemeral });
       return;
     }
 
@@ -2080,9 +2080,9 @@ async function handleButton(interaction: any) {
         content: `Thank you <@&1468236218331562024> all slots have been filled and you can start buying your channels!`,
         allowedMentions: { roles: ['1468236218331562024'] }
       });
-      await interaction.reply({ content: "Buy announcement sent.", ephemeral: true });
+      await interaction.reply({ content: "Buy announcement sent.", flags: MessageFlags.Ephemeral });
     } else {
-      await interaction.reply({ content: "This can only be used in a text channel.", ephemeral: true });
+      await interaction.reply({ content: "This can only be used in a text channel.", flags: MessageFlags.Ephemeral });
     }
     return;
   }
@@ -2103,12 +2103,12 @@ async function handleButton(interaction: any) {
     } catch (e) {}
 
     if (!isAdmin) {
-      await interaction.reply({ content: "Only staff can use this button.", ephemeral: true });
+      await interaction.reply({ content: "Only staff can use this button.", flags: MessageFlags.Ephemeral });
       return;
     }
 
     boosterUnlocked = true;
-    await interaction.reply({ content: "Server Booster Reserves have been unlocked. Users can now claim them.", ephemeral: true });
+    await interaction.reply({ content: "Server Booster Reserves have been unlocked. Users can now claim them.", flags: MessageFlags.Ephemeral });
 
     if (interaction.channel instanceof TextChannel && interaction.message) {
       await updateOrgEmbed(interaction.channel, interaction.message.id);
@@ -2157,7 +2157,7 @@ async function handleButton(interaction: any) {
           stepMessage = 'picking your Galarian bird and then using **!res** for your additional reserve';
         }
 
-        await interaction.reply({ content: `You must complete your reservation for **${userRes.category}${userRes.subCategory && userRes.subCategory !== 'none' ? ` (${userRes.subCategory})` : ''}** by ${stepMessage} before selecting another category.`, ephemeral: true });
+        await interaction.reply({ content: `You must complete your reservation for **${userRes.category}${userRes.subCategory && userRes.subCategory !== 'none' ? ` (${userRes.subCategory})` : ''}** by ${stepMessage} before selecting another category.`, flags: MessageFlags.Ephemeral });
         return;
       }
     }
@@ -2180,7 +2180,7 @@ async function handleButton(interaction: any) {
       // Check if user already has a Regional reservation
       const userRegionalRes = regionalReservations.find(r => r.user.discordId === userId);
       if (userRegionalRes) {
-        await interaction.reply({ content: `You already have a Regional reservation (${userRegionalRes.subCategory || 'pending'}). Use /cancelres to release it first.`, ephemeral: true });
+        await interaction.reply({ content: `You already have a Regional reservation (${userRegionalRes.subCategory || 'pending'}). Use /cancelres to release it first.`, flags: MessageFlags.Ephemeral });
         return;
       }
       
@@ -2193,13 +2193,13 @@ async function handleButton(interaction: any) {
       
       // Block if all 3 subcategories are taken
       if (allThreeTaken) {
-        await interaction.reply({ content: `All Regional subcategories are taken. Someone must use /cancelres first.`, ephemeral: true });
+        await interaction.reply({ content: `All Regional subcategories are taken. Someone must use /cancelres first.`, flags: MessageFlags.Ephemeral });
         return;
       }
       
       // If Standard Regional is picked, block all sub-categories
       if (hasStandardRegional) {
-        await interaction.reply({ content: `Standard Regional has been picked so the sub-categories (Galarian, Alolan, Hisuian) are not available.`, ephemeral: true });
+        await interaction.reply({ content: `Standard Regional has been picked so the sub-categories (Galarian, Alolan, Hisuian) are not available.`, flags: MessageFlags.Ephemeral });
         return;
       }
       
@@ -2227,7 +2227,7 @@ async function handleButton(interaction: any) {
       
       // If no buttons available, all are taken
       if (buttons.length === 0) {
-        await interaction.reply({ content: `All Regional subcategories are taken. Someone must use /cancelres first.`, ephemeral: true });
+        await interaction.reply({ content: `All Regional subcategories are taken. Someone must use /cancelres first.`, flags: MessageFlags.Ephemeral });
         return;
       }
       
@@ -2239,7 +2239,7 @@ async function handleButton(interaction: any) {
       });
       
       const subRow = new ActionRowBuilder<ButtonBuilder>().addComponents(buttons);
-      await interaction.reply({ content: `You selected ${categoryName}. Choose a sub-category:`, components: [subRow], ephemeral: true });
+      await interaction.reply({ content: `You selected ${categoryName}. Choose a sub-category:`, components: [subRow], flags: MessageFlags.Ephemeral });
     } else {
       // For all other categories (including Gmax and Reserves)
       const categoryReservations = existingReservations.filter(r => r.category === categoryName);
@@ -2248,7 +2248,7 @@ async function handleButton(interaction: any) {
       if (categoryName === 'Staff Reserve') {
         const member = await interaction.guild?.members.fetch(userId);
         if (!member?.roles.cache.has(ADMIN_ROLE_ID)) {
-          await interaction.reply({ content: `Only staff members can claim this category.`, ephemeral: true });
+          await interaction.reply({ content: `Only staff members can claim this category.`, flags: MessageFlags.Ephemeral });
           return;
         }
         
@@ -2256,9 +2256,9 @@ async function handleButton(interaction: any) {
         if (categoryReservations.length >= 1) {
           const alreadyClaimedByUser = categoryReservations.find(r => r.user.discordId === userId);
           if (alreadyClaimedByUser) {
-            await interaction.reply({ content: `You already have a Staff Reserve. Use !res (Pokemon Pokemon) to reserve up to 2 Pokemon.`, ephemeral: true });
+            await interaction.reply({ content: `You already have a Staff Reserve. Use !res (Pokemon Pokemon) to reserve up to 2 Pokemon.`, flags: MessageFlags.Ephemeral });
           } else {
-            await interaction.reply({ content: `Staff Reserve is already claimed by ${categoryReservations[0].user.username}.`, ephemeral: true });
+            await interaction.reply({ content: `Staff Reserve is already claimed by ${categoryReservations[0].user.username}.`, flags: MessageFlags.Ephemeral });
           }
           return;
         }
@@ -2270,7 +2270,7 @@ async function handleButton(interaction: any) {
           channelRange: range,
         });
         
-        await interaction.reply({ content: `You claimed Staff Reserve. Use !res (Pokemon Pokemon) to reserve up to 2 Pokemon.`, ephemeral: true });
+        await interaction.reply({ content: `You claimed Staff Reserve. Use !res (Pokemon Pokemon) to reserve up to 2 Pokemon.`, flags: MessageFlags.Ephemeral });
         
         if (interaction.channel instanceof TextChannel && interaction.message) {
           await updateOrgEmbed(interaction.channel, interaction.message.id);
@@ -2281,7 +2281,7 @@ async function handleButton(interaction: any) {
       // Special logic for Server Booster Reserves: require booster role, must be unlocked by staff
       if (categoryName === 'Server Booster Reserves') {
         if (!boosterUnlocked) {
-          await interaction.reply({ content: `Server Booster Reserves are currently locked. A staff member must unlock them first.`, ephemeral: true });
+          await interaction.reply({ content: `Server Booster Reserves are currently locked. A staff member must unlock them first.`, flags: MessageFlags.Ephemeral });
           return;
         }
 
@@ -2290,7 +2290,7 @@ async function handleButton(interaction: any) {
         const isStaff = member?.roles.cache.has(ADMIN_ROLE_ID);
         
         if (!member?.roles.cache.has(BOOSTER_ROLE_ID) && !isStaff) {
-          await interaction.reply({ content: `You must have the Server Booster role to claim this category.`, ephemeral: true });
+          await interaction.reply({ content: `You must have the Server Booster role to claim this category.`, flags: MessageFlags.Ephemeral });
           return;
         }
         
@@ -2298,9 +2298,9 @@ async function handleButton(interaction: any) {
         if (categoryReservations.length >= 2) {
           const alreadyClaimedByUser = categoryReservations.find(r => r.user.discordId === userId);
           if (alreadyClaimedByUser) {
-            await interaction.reply({ content: `You already have a Server Booster reservation. Use !res to reserve your Pokemon.`, ephemeral: true });
+            await interaction.reply({ content: `You already have a Server Booster reservation. Use !res to reserve your Pokemon.`, flags: MessageFlags.Ephemeral });
           } else {
-            await interaction.reply({ content: `Server Booster Reserves is already fully claimed (Split taken).`, ephemeral: true });
+            await interaction.reply({ content: `Server Booster Reserves is already fully claimed (Split taken).`, flags: MessageFlags.Ephemeral });
           }
           return;
         }
@@ -2308,7 +2308,7 @@ async function handleButton(interaction: any) {
         // Check if user already has a reservation
         const userReservation = categoryReservations.find(r => r.user.discordId === userId);
         if (userReservation) {
-          await interaction.reply({ content: `You already have a Server Booster reservation. Use !res to reserve your Pokemon.`, ephemeral: true });
+          await interaction.reply({ content: `You already have a Server Booster reservation. Use !res to reserve your Pokemon.`, flags: MessageFlags.Ephemeral });
           return;
         }
         
@@ -2320,11 +2320,11 @@ async function handleButton(interaction: any) {
         });
         
         if (isStaff) {
-          await interaction.reply({ content: `You claimed Server Booster Reserves as staff. Use !res (Pokemon Pokemon) to reserve up to 2 Pokemon. One more booster can also claim this category.`, ephemeral: true });
+          await interaction.reply({ content: `You claimed Server Booster Reserves as staff. Use !res (Pokemon Pokemon) to reserve up to 2 Pokemon. One more booster can also claim this category.`, flags: MessageFlags.Ephemeral });
         } else if (categoryReservations.length === 0) {
-          await interaction.reply({ content: `You claimed Server Booster Reserves. Use !res (Pokemon) to reserve your Pokemon. One more booster can also claim this category.`, ephemeral: true });
+          await interaction.reply({ content: `You claimed Server Booster Reserves. Use !res (Pokemon) to reserve your Pokemon. One more booster can also claim this category.`, flags: MessageFlags.Ephemeral });
         } else {
-          await interaction.reply({ content: `You claimed the split for Server Booster Reserves. Use !res (Pokemon) to reserve your Pokemon.`, ephemeral: true });
+          await interaction.reply({ content: `You claimed the split for Server Booster Reserves. Use !res (Pokemon) to reserve your Pokemon.`, flags: MessageFlags.Ephemeral });
         }
         
         if (interaction.channel instanceof TextChannel && interaction.message) {
@@ -2339,7 +2339,7 @@ async function handleButton(interaction: any) {
         if (existing.pokemon1 && !existing.pokemon2) {
           // Person who already has it can't claim again as a new reservation
           if (existing.user.discordId === userId) {
-            await interaction.reply({ content: `You already have this reservation. **Use !res to add your second pokemon**.`, ephemeral: true });
+            await interaction.reply({ content: `You already have this reservation. **Use !res to add your second pokemon**.`, flags: MessageFlags.Ephemeral });
             return;
           }
           
@@ -2347,9 +2347,9 @@ async function handleButton(interaction: any) {
           if (categoryReservations.length >= 2) {
              const alreadyClaimedByUser = categoryReservations.find(r => r.user.discordId === userId);
              if (alreadyClaimedByUser) {
-               await interaction.reply({ content: `You already have a split reservation for ${categoryName}. **Use !res to reserve**.`, ephemeral: true });
+               await interaction.reply({ content: `You already have a split reservation for ${categoryName}. **Use !res to reserve**.`, flags: MessageFlags.Ephemeral });
              } else {
-               await interaction.reply({ content: `${categoryName} is already fully claimed (Split taken).`, ephemeral: true });
+               await interaction.reply({ content: `${categoryName} is already fully claimed (Split taken).`, flags: MessageFlags.Ephemeral });
              }
              return;
           }
@@ -2360,7 +2360,7 @@ async function handleButton(interaction: any) {
             category: categoryName,
             channelRange: range,
           });
-          await interaction.reply({ content: `You claimed the split for ${categoryName}. **Use !res (Pokemon) to reserve your 1 Pokemon**.`, ephemeral: true });
+          await interaction.reply({ content: `You claimed the split for ${categoryName}. **Use !res (Pokemon) to reserve your 1 Pokemon**.`, flags: MessageFlags.Ephemeral });
           if (interaction.channel instanceof TextChannel && interaction.message) {
             await updateOrgEmbed(interaction.channel, interaction.message.id);
           }
@@ -2371,9 +2371,9 @@ async function handleButton(interaction: any) {
       const existingClaim = categoryReservations[0];
       if (existingClaim) {
         if (existingClaim.user.discordId === userId) {
-          await interaction.reply({ content: `You already have a reservation for ${categoryName}. Use /cancelres to release it first.`, ephemeral: true });
+          await interaction.reply({ content: `You already have a reservation for ${categoryName}. Use /cancelres to release it first.`, flags: MessageFlags.Ephemeral });
         } else {
-          await interaction.reply({ content: `${categoryName} is already claimed by ${existingClaim.user.username}. They must use /cancelres first.`, ephemeral: true });
+          await interaction.reply({ content: `${categoryName} is already claimed by ${existingClaim.user.username}. They must use /cancelres first.`, flags: MessageFlags.Ephemeral });
         }
         return;
       }
@@ -2408,14 +2408,14 @@ async function handleButton(interaction: any) {
         await interaction.reply({ 
           content: `You selected ${categoryName}. Please pick your Gigantamax Rare below:`, 
           components: [gmaxRow], 
-          ephemeral: true 
+          flags: MessageFlags.Ephemeral 
         });
       } else if (customId === 'cat_missingno') {
-        await interaction.reply({ content: `You selected ${categoryName}. **Use !res (Pokemon Pokemon) to reserve your 2 Pokemon**.`, ephemeral: true });
+        await interaction.reply({ content: `You selected ${categoryName}. **Use !res (Pokemon Pokemon) to reserve your 2 Pokemon**.`, flags: MessageFlags.Ephemeral });
       } else if (customId === 'cat_choice1' || customId === 'cat_choice2') {
-        await interaction.reply({ content: `You selected ${categoryName}. **Use !res (GroupName) for a group or !res (Pokemon Pokemon) for 2 individual Pokemon with multiple forms**.`, ephemeral: true });
+        await interaction.reply({ content: `You selected ${categoryName}. **Use !res (GroupName) for a group or !res (Pokemon Pokemon) for 2 individual Pokemon with multiple forms**.`, flags: MessageFlags.Ephemeral });
       } else {
-        await interaction.reply({ content: `You selected ${categoryName}. **Use !res (Pokemon) to reserve**.`, ephemeral: true });
+        await interaction.reply({ content: `You selected ${categoryName}. **Use !res (Pokemon) to reserve**.`, flags: MessageFlags.Ephemeral });
       }
     }
 
@@ -2436,7 +2436,7 @@ async function handleButton(interaction: any) {
     const userRegionalReservation = regionalReservations.find(r => r.user.discordId === interaction.user.id && !r.subCategory);
     
     if (!userRegionalReservation) {
-      await interaction.reply({ content: "No pending Regional reservation found. Please click the Regionals category button first.", ephemeral: true });
+      await interaction.reply({ content: "No pending Regional reservation found. Please click the Regionals category button first.", flags: MessageFlags.Ephemeral });
       return;
     }
     
@@ -2447,14 +2447,14 @@ async function handleButton(interaction: any) {
       .filter(Boolean);
     
     if (sub !== 'none' && takenSubcategories.includes(sub.toLowerCase())) {
-      await interaction.reply({ content: `The ${sub} subcategory is already taken. Please choose a different one.`, ephemeral: true });
+      await interaction.reply({ content: `The ${sub} subcategory is already taken. Please choose a different one.`, flags: MessageFlags.Ephemeral });
       return;
     }
     
     // Check if Standard Regional exists - blocks ALL sub-categories
     const standardHolder = regionalReservations.find(r => r.subCategory === 'standard' || r.subCategory === 'none');
     if (standardHolder && sub !== 'none') {
-      await interaction.reply({ content: `Standard Regional has been picked so the sub-categories (Galarian, Alolan, Hisuian) are not available.`, ephemeral: true });
+      await interaction.reply({ content: `Standard Regional has been picked so the sub-categories (Galarian, Alolan, Hisuian) are not available.`, flags: MessageFlags.Ephemeral });
       return;
     }
     
@@ -2467,13 +2467,13 @@ async function handleButton(interaction: any) {
       const anySubCategoryHasReserved = subCategoryWithRes.some(r => r.pokemon1 || r.additionalPokemon);
       
       if (anySubCategoryHasReserved) {
-        await interaction.reply({ content: `Standard Regionals are unavailable as somebody has already reserved a Sub Category.`, ephemeral: true });
+        await interaction.reply({ content: `Standard Regionals are unavailable as somebody has already reserved a Sub Category.`, flags: MessageFlags.Ephemeral });
         return;
       }
       
       // Also check if Standard is already taken
       if (takenSubcategories.includes('standard')) {
-        await interaction.reply({ content: `Standard Regional is already taken.`, ephemeral: true });
+        await interaction.reply({ content: `Standard Regional is already taken.`, flags: MessageFlags.Ephemeral });
         return;
       }
     }
@@ -2489,7 +2489,7 @@ async function handleButton(interaction: any) {
           new ButtonBuilder().setCustomId('galarian_bird_zapdos').setLabel('Galarian Zapdos').setStyle(ButtonStyle.Primary),
           new ButtonBuilder().setCustomId('galarian_bird_moltres').setLabel('Galarian Moltres').setStyle(ButtonStyle.Primary),
         );
-      await interaction.reply({ content: `Updated to Galarian Regionals. Please pick which Galarian bird you want:`, components: [birdRow], ephemeral: true });
+      await interaction.reply({ content: `Updated to Galarian Regionals. Please pick which Galarian bird you want:`, components: [birdRow], flags: MessageFlags.Ephemeral });
     } else if (sub === 'none') {
       // Standard Regional - show Galarian bird options AND gets extra reserve via !res after
       const birdRow = new ActionRowBuilder<ButtonBuilder>()
@@ -2498,10 +2498,10 @@ async function handleButton(interaction: any) {
           new ButtonBuilder().setCustomId('galarian_bird_zapdos').setLabel('Galarian Zapdos').setStyle(ButtonStyle.Primary),
           new ButtonBuilder().setCustomId('galarian_bird_moltres').setLabel('Galarian Moltres').setStyle(ButtonStyle.Primary),
         );
-      await interaction.reply({ content: `Updated to Standard Regional. Please pick a Galarian bird below. After picking, you may use !res to select your additional reserve.`, components: [birdRow], ephemeral: true });
+      await interaction.reply({ content: `Updated to Standard Regional. Please pick a Galarian bird below. After picking, you may use !res to select your additional reserve.`, components: [birdRow], flags: MessageFlags.Ephemeral });
     } else {
       // For Alolan and Hisuian - NO extra reserve slot available
-      await interaction.reply({ content: `Updated sub-category to ${sub}. Note: Alolan and Hisuian subcategories do not receive a separate reserve slot.`, ephemeral: true });
+      await interaction.reply({ content: `Updated sub-category to ${sub}. Note: Alolan and Hisuian subcategories do not receive a separate reserve slot.`, flags: MessageFlags.Ephemeral });
     }
 
     // Update the main embed if we can find it
@@ -2518,7 +2518,7 @@ async function handleButton(interaction: any) {
     const reservation = reservations.find(r => r.id === id);
     
     if (!reservation) {
-      await interaction.reply({ content: "Reservation not found.", ephemeral: true });
+      await interaction.reply({ content: "Reservation not found.", flags: MessageFlags.Ephemeral });
       return;
     }
     
@@ -2526,7 +2526,7 @@ async function handleButton(interaction: any) {
     const userId = interaction.user.id;
     const user = await storage.getUserByDiscordId(userId);
     if (!user || reservation.userId !== user.id) {
-      await interaction.reply({ content: "You can only change your own reservations.", ephemeral: true });
+      await interaction.reply({ content: "You can only change your own reservations.", flags: MessageFlags.Ephemeral });
       return;
     }
     
@@ -2535,7 +2535,7 @@ async function handleButton(interaction: any) {
     
     await interaction.reply({ 
       content: `Your Pokemon selection for **${reservation.category}${reservation.subCategory ? ` (${reservation.subCategory})` : ''}** has been cleared. Use **!res** to choose new Pokemon.`, 
-      ephemeral: true 
+      flags: MessageFlags.Ephemeral 
     });
     
     // Update the org embed
@@ -2564,7 +2564,7 @@ async function handleButton(interaction: any) {
     }
     
     if (!isAdmin) {
-      await interaction.reply({ content: "Only admins can manage reservations.", ephemeral: true });
+      await interaction.reply({ content: "Only admins can manage reservations.", flags: MessageFlags.Ephemeral });
       return;
     }
     
@@ -2573,7 +2573,7 @@ async function handleButton(interaction: any) {
     const reservation = reservations.find(r => r.id === id);
     
     if (!reservation) {
-      await interaction.reply({ content: "Reservation not found.", ephemeral: true });
+      await interaction.reply({ content: "Reservation not found.", flags: MessageFlags.Ephemeral });
       return;
     }
     
@@ -2582,7 +2582,7 @@ async function handleButton(interaction: any) {
     
     await interaction.reply({ 
       content: `Cleared Pokemon selection for **${reservation.user.username}** (${reservation.category}). They have been notified to choose new Pokemon.`, 
-      ephemeral: true 
+      flags: MessageFlags.Ephemeral 
     });
     
     // Notify the user in the channel
@@ -2614,7 +2614,7 @@ async function handleButton(interaction: any) {
     }
     
     if (!isAdmin) {
-      await interaction.reply({ content: "Only admins can manage reservations.", ephemeral: true });
+      await interaction.reply({ content: "Only admins can manage reservations.", flags: MessageFlags.Ephemeral });
       return;
     }
     
@@ -2623,14 +2623,14 @@ async function handleButton(interaction: any) {
     const reservation = reservations.find(r => r.id === id);
     
     if (!reservation) {
-      await interaction.reply({ content: "Reservation not found.", ephemeral: true });
+      await interaction.reply({ content: "Reservation not found.", flags: MessageFlags.Ephemeral });
       return;
     }
     
     await storage.deleteReservation(id);
     await interaction.reply({ 
       content: `Cancelled reservation for **${reservation.user.username}** (${reservation.category}).`, 
-      ephemeral: true 
+      flags: MessageFlags.Ephemeral 
     });
     
     // Update the org embed
@@ -2651,7 +2651,7 @@ async function handleButton(interaction: any) {
     const reservation = reservations.find(r => r.id === id);
     
     if (!reservation) {
-      await interaction.reply({ content: "Reservation not found.", ephemeral: true });
+      await interaction.reply({ content: "Reservation not found.", flags: MessageFlags.Ephemeral });
       return;
     }
     
@@ -2659,14 +2659,14 @@ async function handleButton(interaction: any) {
     const userId = interaction.user.id;
     const user = await storage.getUserByDiscordId(userId);
     if (!user || reservation.userId !== user.id) {
-      await interaction.reply({ content: "You can only cancel your own reservations.", ephemeral: true });
+      await interaction.reply({ content: "You can only cancel your own reservations.", flags: MessageFlags.Ephemeral });
       return;
     }
     
     await storage.deleteReservation(id);
     await interaction.reply({ 
       content: `Cancelled reservation for **${reservation.category}${reservation.subCategory ? ` (${reservation.subCategory})` : ''}**.`, 
-      ephemeral: true 
+      flags: MessageFlags.Ephemeral 
     });
     
     // Update the org embed
@@ -2686,7 +2686,7 @@ async function handleSelectMenu(interaction: any) {
   if (interaction.customId === 'user_manage_select') {
     const selected = interaction.values && interaction.values[0];
     if (!selected) {
-      await interaction.reply({ content: "No reservation selected.", ephemeral: true });
+      await interaction.reply({ content: "No reservation selected.", flags: MessageFlags.Ephemeral });
       return;
     }
 
@@ -2694,7 +2694,7 @@ async function handleSelectMenu(interaction: any) {
     const reservations = await storage.getReservations();
     const reservation = reservations.find(r => r.id === id);
     if (!reservation) {
-      await interaction.reply({ content: "Reservation not found or already removed.", ephemeral: true });
+      await interaction.reply({ content: "Reservation not found or already removed.", flags: MessageFlags.Ephemeral });
       return;
     }
 
@@ -2702,7 +2702,7 @@ async function handleSelectMenu(interaction: any) {
     const userId = interaction.user.id;
     const user = await storage.getUserByDiscordId(userId);
     if (!user || reservation.userId !== user.id) {
-      await interaction.reply({ content: "You can only manage your own reservations.", ephemeral: true });
+      await interaction.reply({ content: "You can only manage your own reservations.", flags: MessageFlags.Ephemeral });
       return;
     }
 
@@ -2725,7 +2725,7 @@ async function handleSelectMenu(interaction: any) {
     await interaction.reply({ 
       content: `**${reservation.category}${reservation.subCategory ? ` (${reservation.subCategory})` : ''}**\nPokemon: ${pokemonList || 'None'}\n\n**Change Reserve** - Clear your Pokemon selection and choose new ones with !res\n**Full Cancel** - Remove your entire reservation`, 
       components: [buttonRow], 
-      ephemeral: true 
+      flags: MessageFlags.Ephemeral 
     });
     return;
   }
@@ -2734,7 +2734,7 @@ async function handleSelectMenu(interaction: any) {
   if (interaction.customId === 'admin_cancel_select') {
     const selected = interaction.values && interaction.values[0];
     if (!selected) {
-      await interaction.reply({ content: "No reservation selected.", ephemeral: true });
+      await interaction.reply({ content: "No reservation selected.", flags: MessageFlags.Ephemeral });
       return;
     }
 
@@ -2742,7 +2742,7 @@ async function handleSelectMenu(interaction: any) {
     const reservations = await storage.getReservations();
     const reservation = reservations.find(r => r.id === id);
     if (!reservation) {
-      await interaction.reply({ content: "Reservation not found or already removed.", ephemeral: true });
+      await interaction.reply({ content: "Reservation not found or already removed.", flags: MessageFlags.Ephemeral });
       return;
     }
 
@@ -2765,7 +2765,7 @@ async function handleSelectMenu(interaction: any) {
     await interaction.reply({ 
       content: `**${reservation.user.username}** - ${reservation.category}${reservation.subCategory ? ` (${reservation.subCategory})` : ''}\nPokemon: ${pokemonList || 'None'}\n\n**Clear Pokemon** - Remove their Pokemon selection but keep their category. They will be notified.\n**Full Cancel** - Remove their entire reservation.`, 
       components: [buttonRow], 
-      ephemeral: true 
+      flags: MessageFlags.Ephemeral 
     });
     return;
   }
