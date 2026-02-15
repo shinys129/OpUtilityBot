@@ -104,235 +104,211 @@ export async function startBot() {
 
 async function registerSlashCommands() {
   if (client?.application) {
-     await client.application.commands.create({
-       name: 'startorg',
-       description: 'Start the org process and show category buttons.',
-     });
+     // Clear all global commands to prevent duplicates
+     await client.application.commands.set([]);
+     console.log("Cleared global commands to prevent duplicates.");
 
-     await client.application.commands.create({
-       name: 'refreshorg',
-       description: 'Refresh the org embed without losing any data.',
-     });
+     const commands = [
+       {
+         name: 'startorg',
+         description: 'Start the org process and show category buttons.',
+       },
+       {
+         name: 'refreshorg',
+         description: 'Refresh the org embed without losing any data.',
+       },
+       {
+         name: 'reloadorg',
+         description: 'Recreate the org embed if it gets stuck or missing.',
+       },
+       {
+         name: 'cancelres',
+         description: 'Cancel your reservation.',
+       },
+       {
+         name: 'endorg',
+         description: 'Close org and clear all reservations (admin only).',
+       },
+       {
+         name: 'setchannels',
+         description: 'Register channels to a category (admin only).',
+         options: [
+           {
+             name: 'category',
+             description: 'Category (e.g. Rares, Gmax, etc.)',
+             type: 3,
+             required: true,
+             choices: Object.values(CATEGORIES).map(c => ({ name: c.name, value: c.name })),
+           },
+           {
+             name: 'channels',
+             description: 'Comma-separated channel mentions or IDs.',
+             type: 3,
+             required: true,
+           },
+         ],
+       },
+       {
+         name: 'showchannels',
+         description: 'Show registered channels for categories (admin only).',
+         options: [
+           {
+             name: 'category',
+             description: 'Optional category to filter.',
+             type: 3,
+             required: false,
+             choices: Object.values(CATEGORIES).map(c => ({ name: c.name, value: c.name })),
+           },
+         ],
+       },
+       {
+         name: 'lock',
+         description: 'Lock the current channel (revoke send messages permission from @everyone).',
+       },
+       {
+         name: 'unlock',
+         description: 'Unlock the current channel (restore send messages permission for @everyone).',
+       },
+       {
+         name: 'orglock',
+         description: 'Send organization message and lock the channel.',
+       },
+       {
+         name: 'ir',
+         description: 'Send incense resumed message.',
+       },
+       {
+         name: 'ip',
+         description: 'Send incense paused message.',
+       },
+       {
+         name: 'setadminrole',
+         description: 'Set a role that has permission to use org commands (admin only).',
+         options: [
+           {
+             name: 'role',
+             description: 'The role to allow.',
+             type: 8,
+             required: true,
+           },
+         ],
+       },
+       {
+         name: 'warn',
+         description: 'Warn a user (staff only).',
+         options: [
+           { name: 'user', description: 'The user to warn.', type: 6, required: true },
+           { name: 'reason', description: 'Reason for the warning.', type: 3, required: true },
+         ],
+       },
+       {
+         name: 'mute',
+         description: 'Mute a user (staff only).',
+         options: [
+           { name: 'user', description: 'The user to mute.', type: 6, required: true },
+           { name: 'reason', description: 'Reason for the mute.', type: 3, required: true },
+           { name: 'duration', description: 'Duration e.g. 30m, 2h, 7d (leave empty for indefinite).', type: 3, required: false },
+         ],
+       },
+       {
+         name: 'unmute',
+         description: 'Unmute a user (staff only).',
+         options: [
+           { name: 'user', description: 'The user to unmute.', type: 6, required: true },
+         ],
+       },
+       {
+         name: 'ban',
+         description: 'Ban a user from org reservations (staff only).',
+         options: [
+           { name: 'user', description: 'The user to ban.', type: 6, required: true },
+           { name: 'reason', description: 'Reason for the ban.', type: 3, required: true },
+           { name: 'duration', description: 'Duration e.g. 7d, 30d (leave empty for permanent).', type: 3, required: false },
+         ],
+       },
+       {
+         name: 'unban',
+         description: 'Unban a user from org reservations (staff only).',
+         options: [
+           { name: 'user', description: 'The user to unban.', type: 6, required: true },
+         ],
+       },
+       {
+         name: 'steal',
+         description: 'Log a steal against a user (staff only).',
+         options: [
+           { name: 'user', description: 'The user who stole.', type: 6, required: true },
+           { name: 'item', description: 'What was stolen.', type: 3, required: true },
+           { name: 'paid', description: 'Did they pay for it?', type: 5, required: true },
+           { name: 'notes', description: 'Additional notes.', type: 3, required: false },
+         ],
+       },
+       {
+         name: 'remove',
+         description: 'Remove a warning, steal, or clear a user\'s full record (staff only).',
+         options: [
+           {
+             name: 'warn',
+             description: 'Remove a specific warning by ID.',
+             type: 1,
+             options: [
+               { name: 'user', description: 'The user whose warning to remove.', type: 6, required: true },
+               { name: 'id', description: 'Warning ID to remove (use /lookup to find IDs).', type: 4, required: true },
+             ],
+           },
+           {
+             name: 'steal',
+             description: 'Remove a specific steal by ID.',
+             type: 1,
+             options: [
+               { name: 'user', description: 'The user whose steal to remove.', type: 6, required: true },
+               { name: 'id', description: 'Steal ID to remove (use /lookup to find IDs).', type: 4, required: true },
+             ],
+           },
+           {
+             name: 'record',
+             description: 'Clear a user\'s entire record (warnings, steals, bans, mutes).',
+             type: 1,
+             options: [
+               { name: 'user', description: 'The user whose record to clear.', type: 6, required: true },
+             ],
+           },
+         ],
+       },
+       {
+         name: 'timeout',
+         description: 'Timeout a user in Discord (staff only).',
+         options: [
+           { name: 'user', description: 'The user to timeout.', type: 6, required: true },
+           { name: 'duration', description: 'Duration e.g. 30m, 2h, 7d.', type: 3, required: true },
+           { name: 'reason', description: 'Reason for the timeout.', type: 3, required: true },
+         ],
+       },
+       {
+         name: 'lookup',
+         description: 'Look up a user\'s moderation history and steals (staff only).',
+         options: [
+           { name: 'user', description: 'The user to look up.', type: 6, required: true },
+         ],
+       },
+       {
+         name: 'modlog',
+         description: 'View recent moderation actions (staff only).',
+         options: [
+           { name: 'limit', description: 'Number of entries to show (default 10).', type: 4, required: false },
+         ],
+       },
+     ];
 
-     await client.application.commands.create({
-       name: 'reloadorg',
-       description: 'Recreate the org embed if it gets stuck or missing.',
+     // Register commands per-guild only (instant updates, no duplicates)
+     client.guilds.cache.forEach(async (guild) => {
+       try {
+         await guild.commands.set(commands as any[]);
+         console.log(`Synced ${commands.length} commands to guild: ${guild.name}`);
+       } catch (e) {
+         console.error(`Failed to sync commands to guild ${guild.name}:`, e);
+       }
      });
-
-     await client.application.commands.create({
-       name: 'cancelres',
-       description: 'Cancel your reservation.',
-     });
-
-     await client.application.commands.create({
-       name: 'endorg',
-       description: 'Close org and clear all reservations (admin only).',
-     });
-
-     // /setchannels category (string choice) channels (string: comma-separated mentions or ids)
-     await client.application.commands.create({
-       name: 'setchannels',
-       description: 'Register channels to a category (admin only).',
-       options: [
-         {
-           name: 'category',
-           description: 'Category (e.g. Rares, Gmax, etc.)',
-           type: 3, // STRING
-           required: true,
-           choices: Object.values(CATEGORIES).map(c => ({ name: c.name, value: c.name })),
-         },
-         {
-           name: 'channels',
-           description: 'Comma-separated channel mentions or IDs.',
-           type: 3, // STRING
-           required: true,
-         },
-       ],
-     });
-
-     // /showchannels optionally filtered by category
-     await client.application.commands.create({
-       name: 'showchannels',
-       description: 'Show registered channels for categories (admin only).',
-       options: [
-         {
-           name: 'category',
-           description: 'Optional category to filter.',
-           type: 3, // STRING
-           required: false,
-           choices: Object.values(CATEGORIES).map(c => ({ name: c.name, value: c.name })),
-         },
-       ],
-     });
-
-     await client.application.commands.create({
-       name: 'lock',
-       description: 'Lock the current channel (revoke send messages permission from @everyone).',
-     });
-
-     await client.application.commands.create({
-       name: 'unlock',
-       description: 'Unlock the current channel (restore send messages permission for @everyone).',
-     });
-
-     await client.application.commands.create({
-       name: 'orglock',
-       description: 'Send organization message and lock the channel.',
-     });
-
-     await client.application.commands.create({
-       name: 'ir',
-       description: 'Send incense resumed message.',
-     });
-
-     await client.application.commands.create({
-       name: 'ip',
-       description: 'Send incense paused message.',
-     });
-
-     await client.application.commands.create({
-       name: 'setadminrole',
-       description: 'Set a role that has permission to use org commands (admin only).',
-       options: [
-         {
-           name: 'role',
-           description: 'The role to allow.',
-           type: 8, // ROLE
-           required: true,
-         },
-       ],
-     });
-
-     await client.application.commands.create({
-       name: 'warn',
-       description: 'Warn a user (staff only).',
-       options: [
-         { name: 'user', description: 'The user to warn.', type: 6, required: true },
-         { name: 'reason', description: 'Reason for the warning.', type: 3, required: true },
-       ],
-     });
-
-     await client.application.commands.create({
-       name: 'mute',
-       description: 'Mute a user (staff only).',
-       options: [
-         { name: 'user', description: 'The user to mute.', type: 6, required: true },
-         { name: 'reason', description: 'Reason for the mute.', type: 3, required: true },
-         { name: 'duration', description: 'Duration e.g. 30m, 2h, 7d (leave empty for indefinite).', type: 3, required: false },
-       ],
-     });
-
-     await client.application.commands.create({
-       name: 'unmute',
-       description: 'Unmute a user (staff only).',
-       options: [
-         { name: 'user', description: 'The user to unmute.', type: 6, required: true },
-       ],
-     });
-
-     await client.application.commands.create({
-       name: 'ban',
-       description: 'Ban a user from org reservations (staff only).',
-       options: [
-         { name: 'user', description: 'The user to ban.', type: 6, required: true },
-         { name: 'reason', description: 'Reason for the ban.', type: 3, required: true },
-         { name: 'duration', description: 'Duration e.g. 7d, 30d (leave empty for permanent).', type: 3, required: false },
-       ],
-     });
-
-     await client.application.commands.create({
-       name: 'unban',
-       description: 'Unban a user from org reservations (staff only).',
-       options: [
-         { name: 'user', description: 'The user to unban.', type: 6, required: true },
-       ],
-     });
-
-     await client.application.commands.create({
-       name: 'steal',
-       description: 'Log a steal against a user (staff only).',
-       options: [
-         { name: 'user', description: 'The user who stole.', type: 6, required: true },
-         { name: 'item', description: 'What was stolen.', type: 3, required: true },
-         { name: 'paid', description: 'Did they pay for it?', type: 5, required: true },
-         { name: 'notes', description: 'Additional notes.', type: 3, required: false },
-       ],
-     });
-
-     await client.application.commands.create({
-       name: 'remove',
-       description: 'Remove a warning, steal, or clear a user\'s full record (staff only).',
-       options: [
-         {
-           name: 'warn',
-           description: 'Remove a specific warning by ID.',
-           type: 1,
-           options: [
-             { name: 'user', description: 'The user whose warning to remove.', type: 6, required: true },
-             { name: 'id', description: 'Warning ID to remove (use /lookup to find IDs).', type: 4, required: true },
-           ],
-         },
-         {
-           name: 'steal',
-           description: 'Remove a specific steal by ID.',
-           type: 1,
-           options: [
-             { name: 'user', description: 'The user whose steal to remove.', type: 6, required: true },
-             { name: 'id', description: 'Steal ID to remove (use /lookup to find IDs).', type: 4, required: true },
-           ],
-         },
-         {
-           name: 'record',
-           description: 'Clear a user\'s entire record (warnings, steals, bans, mutes).',
-           type: 1,
-           options: [
-             { name: 'user', description: 'The user whose record to clear.', type: 6, required: true },
-           ],
-         },
-       ],
-     });
-
-     await client.application.commands.create({
-       name: 'timeout',
-       description: 'Timeout a user in Discord (staff only).',
-       options: [
-         { name: 'user', description: 'The user to timeout.', type: 6, required: true },
-         { name: 'duration', description: 'Duration e.g. 30m, 2h, 7d.', type: 3, required: true },
-         { name: 'reason', description: 'Reason for the timeout.', type: 3, required: true },
-       ],
-     });
-
-     await client.application.commands.create({
-       name: 'lookup',
-       description: 'Look up a user\'s moderation history and steals (staff only).',
-       options: [
-         { name: 'user', description: 'The user to look up.', type: 6, required: true },
-       ],
-     });
-
-     await client.application.commands.create({
-       name: 'modlog',
-       description: 'View recent moderation actions (staff only).',
-       options: [
-         { name: 'limit', description: 'Number of entries to show (default 10).', type: 4, required: false },
-       ],
-     });
-
-     // Also register per-guild for instant availability
-     try {
-       const appCommands = await client.application.commands.fetch();
-       const commandData = appCommands.map(cmd => cmd.toJSON()) as any[];
-       client.guilds.cache.forEach(async (guild) => {
-         try {
-           await guild.commands.set(commandData);
-           console.log(`Synced commands to guild: ${guild.name}`);
-         } catch (e) {
-           console.error(`Failed to sync commands to guild ${guild.name}:`, e);
-         }
-       });
-     } catch (e) {
-       console.error("Failed to sync guild commands:", e);
-     }
   }
 }
 
