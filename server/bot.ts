@@ -240,6 +240,22 @@ async function registerSlashCommands() {
          { name: 'limit', description: 'Number of entries to show (default 10).', type: 4, required: false },
        ],
      });
+
+     // Also register per-guild for instant availability
+     try {
+       const appCommands = await client.application.commands.fetch();
+       const commandData = appCommands.map(cmd => cmd.toJSON()) as any[];
+       client.guilds.cache.forEach(async (guild) => {
+         try {
+           await guild.commands.set(commandData);
+           console.log(`Synced commands to guild: ${guild.name}`);
+         } catch (e) {
+           console.error(`Failed to sync commands to guild ${guild.name}:`, e);
+         }
+       });
+     } catch (e) {
+       console.error("Failed to sync guild commands:", e);
+     }
   }
 }
 
@@ -1345,7 +1361,12 @@ async function handleSlashCommand(interaction: any) {
     } catch (e) {}
 
     if (!isStaff) {
-      await interaction.reply({ content: "You do not have permission to use this command.", ephemeral: true });
+      const noPermEmbed = new EmbedBuilder()
+        .setColor(0xED4245)
+        .setTitle('Permission Denied')
+        .setDescription('You do not have permission to use this command.')
+        .setTimestamp();
+      await interaction.reply({ embeds: [noPermEmbed], ephemeral: true });
       return;
     }
 
@@ -1362,10 +1383,20 @@ async function handleSlashCommand(interaction: any) {
       const warnings = await storage.getUserWarnings(targetUser.id);
       const activeCount = warnings.filter(w => w.isActive).length;
 
-      await interaction.reply({
-        content: `**Warning Issued**\nUser: <@${targetDiscordUser.id}>\nReason: ${reason}\nTotal active warnings: ${activeCount}`,
-        ephemeral: false,
-      });
+      const embed = new EmbedBuilder()
+        .setColor(0xFEE75C)
+        .setTitle('Warning Issued')
+        .setThumbnail(targetDiscordUser.displayAvatarURL({ size: 64 }))
+        .addFields(
+          { name: 'User', value: `<@${targetDiscordUser.id}>`, inline: true },
+          { name: 'Warned By', value: `<@${interaction.user.id}>`, inline: true },
+          { name: 'Active Warnings', value: `${activeCount}`, inline: true },
+          { name: 'Reason', value: reason },
+        )
+        .setFooter({ text: `User ID: ${targetDiscordUser.id}` })
+        .setTimestamp();
+
+      await interaction.reply({ embeds: [embed] });
     }
 
     if (interaction.commandName === 'mute') {
@@ -1389,11 +1420,21 @@ async function handleSlashCommand(interaction: any) {
         console.error("Failed to apply Discord timeout:", e);
       }
 
-      const durationText = durationMinutes ? `${durationMinutes} minutes` : 'indefinite';
-      await interaction.reply({
-        content: `**User Muted**\nUser: <@${targetDiscordUser.id}>\nReason: ${reason}\nDuration: ${durationText}`,
-        ephemeral: false,
-      });
+      const durationText = durationMinutes ? `${durationMinutes} minutes` : 'Indefinite';
+      const embed = new EmbedBuilder()
+        .setColor(0xE67E22)
+        .setTitle('User Muted')
+        .setThumbnail(targetDiscordUser.displayAvatarURL({ size: 64 }))
+        .addFields(
+          { name: 'User', value: `<@${targetDiscordUser.id}>`, inline: true },
+          { name: 'Muted By', value: `<@${interaction.user.id}>`, inline: true },
+          { name: 'Duration', value: durationText, inline: true },
+          { name: 'Reason', value: reason },
+        )
+        .setFooter({ text: `User ID: ${targetDiscordUser.id}` })
+        .setTimestamp();
+
+      await interaction.reply({ embeds: [embed] });
     }
 
     if (interaction.commandName === 'unmute') {
@@ -1401,13 +1442,13 @@ async function handleSlashCommand(interaction: any) {
       const targetUser = await storage.getUserByDiscordId(targetDiscordUser.id);
 
       if (!targetUser) {
-        await interaction.reply({ content: "User not found in the system.", ephemeral: true });
+        await interaction.reply({ embeds: [new EmbedBuilder().setColor(0xED4245).setDescription('User not found in the system.')], ephemeral: true });
         return;
       }
 
       const isMuted = await storage.isUserMuted(targetUser.id);
       if (!isMuted) {
-        await interaction.reply({ content: "This user is not currently muted.", ephemeral: true });
+        await interaction.reply({ embeds: [new EmbedBuilder().setColor(0xED4245).setDescription('This user is not currently muted.')], ephemeral: true });
         return;
       }
 
@@ -1424,10 +1465,18 @@ async function handleSlashCommand(interaction: any) {
         console.error("Failed to remove Discord timeout:", e);
       }
 
-      await interaction.reply({
-        content: `**User Unmuted**\nUser: <@${targetDiscordUser.id}>`,
-        ephemeral: false,
-      });
+      const embed = new EmbedBuilder()
+        .setColor(0x57F287)
+        .setTitle('User Unmuted')
+        .setThumbnail(targetDiscordUser.displayAvatarURL({ size: 64 }))
+        .addFields(
+          { name: 'User', value: `<@${targetDiscordUser.id}>`, inline: true },
+          { name: 'Unmuted By', value: `<@${interaction.user.id}>`, inline: true },
+        )
+        .setFooter({ text: `User ID: ${targetDiscordUser.id}` })
+        .setTimestamp();
+
+      await interaction.reply({ embeds: [embed] });
     }
 
     if (interaction.commandName === 'ban') {
@@ -1438,7 +1487,7 @@ async function handleSlashCommand(interaction: any) {
 
       const alreadyBanned = await storage.isUserBanned(targetUser.id);
       if (alreadyBanned) {
-        await interaction.reply({ content: "This user is already banned.", ephemeral: true });
+        await interaction.reply({ embeds: [new EmbedBuilder().setColor(0xED4245).setDescription('This user is already banned.')], ephemeral: true });
         return;
       }
 
@@ -1447,11 +1496,21 @@ async function handleSlashCommand(interaction: any) {
       await storage.banUser(targetUser.id, reason, staffUser.id, expiresAt);
       await storage.createAuditLog(staffUser.id, 'ban', targetUser.id, { reason, durationDays });
 
-      const durationText = durationDays ? `${durationDays} days` : 'permanent';
-      await interaction.reply({
-        content: `**User Banned from Org**\nUser: <@${targetDiscordUser.id}>\nReason: ${reason}\nDuration: ${durationText}`,
-        ephemeral: false,
-      });
+      const durationText = durationDays ? `${durationDays} days` : 'Permanent';
+      const embed = new EmbedBuilder()
+        .setColor(0xED4245)
+        .setTitle('User Banned from Org')
+        .setThumbnail(targetDiscordUser.displayAvatarURL({ size: 64 }))
+        .addFields(
+          { name: 'User', value: `<@${targetDiscordUser.id}>`, inline: true },
+          { name: 'Banned By', value: `<@${interaction.user.id}>`, inline: true },
+          { name: 'Duration', value: durationText, inline: true },
+          { name: 'Reason', value: reason },
+        )
+        .setFooter({ text: `User ID: ${targetDiscordUser.id}` })
+        .setTimestamp();
+
+      await interaction.reply({ embeds: [embed] });
     }
 
     if (interaction.commandName === 'unban') {
@@ -1459,23 +1518,31 @@ async function handleSlashCommand(interaction: any) {
       const targetUser = await storage.getUserByDiscordId(targetDiscordUser.id);
 
       if (!targetUser) {
-        await interaction.reply({ content: "User not found in the system.", ephemeral: true });
+        await interaction.reply({ embeds: [new EmbedBuilder().setColor(0xED4245).setDescription('User not found in the system.')], ephemeral: true });
         return;
       }
 
       const isBanned = await storage.isUserBanned(targetUser.id);
       if (!isBanned) {
-        await interaction.reply({ content: "This user is not currently banned.", ephemeral: true });
+        await interaction.reply({ embeds: [new EmbedBuilder().setColor(0xED4245).setDescription('This user is not currently banned.')], ephemeral: true });
         return;
       }
 
       await storage.unbanUser(targetUser.id);
       await storage.createAuditLog(staffUser.id, 'unban', targetUser.id, {});
 
-      await interaction.reply({
-        content: `**User Unbanned**\nUser: <@${targetDiscordUser.id}>`,
-        ephemeral: false,
-      });
+      const embed = new EmbedBuilder()
+        .setColor(0x57F287)
+        .setTitle('User Unbanned')
+        .setThumbnail(targetDiscordUser.displayAvatarURL({ size: 64 }))
+        .addFields(
+          { name: 'User', value: `<@${targetDiscordUser.id}>`, inline: true },
+          { name: 'Unbanned By', value: `<@${interaction.user.id}>`, inline: true },
+        )
+        .setFooter({ text: `User ID: ${targetDiscordUser.id}` })
+        .setTimestamp();
+
+      await interaction.reply({ embeds: [embed] });
     }
 
     if (interaction.commandName === 'steal') {
@@ -1489,12 +1556,22 @@ async function handleSlashCommand(interaction: any) {
       await storage.createAuditLog(staffUser.id, 'steal_logged', targetUser.id, { item, paid, notes });
 
       const allSteals = await storage.getUserSteals(targetUser.id);
-      const paidText = paid ? 'Yes' : 'No';
 
-      await interaction.reply({
-        content: `**Steal Logged**\nUser: <@${targetDiscordUser.id}>\nItem: ${item}\nPaid: ${paidText}${notes ? `\nNotes: ${notes}` : ''}\nTotal steals on record: ${allSteals.length}`,
-        ephemeral: false,
-      });
+      const embed = new EmbedBuilder()
+        .setColor(0x9B59B6)
+        .setTitle('Steal Logged')
+        .setThumbnail(targetDiscordUser.displayAvatarURL({ size: 64 }))
+        .addFields(
+          { name: 'User', value: `<@${targetDiscordUser.id}>`, inline: true },
+          { name: 'Logged By', value: `<@${interaction.user.id}>`, inline: true },
+          { name: 'Total Steals', value: `${allSteals.length}`, inline: true },
+          { name: 'Item', value: item, inline: true },
+          { name: 'Paid', value: paid ? 'Yes' : 'No', inline: true },
+        );
+      if (notes) embed.addFields({ name: 'Notes', value: notes });
+      embed.setFooter({ text: `User ID: ${targetDiscordUser.id}` }).setTimestamp();
+
+      await interaction.reply({ embeds: [embed] });
     }
 
     if (interaction.commandName === 'lookup') {
@@ -1502,7 +1579,7 @@ async function handleSlashCommand(interaction: any) {
       const targetUser = await storage.getUserByDiscordId(targetDiscordUser.id);
 
       if (!targetUser) {
-        await interaction.reply({ content: `No records found for <@${targetDiscordUser.id}>.`, ephemeral: true });
+        await interaction.reply({ embeds: [new EmbedBuilder().setColor(0x5865F2).setDescription(`No records found for <@${targetDiscordUser.id}>.`)], ephemeral: true });
         return;
       }
 
@@ -1511,37 +1588,46 @@ async function handleSlashCommand(interaction: any) {
       const isMuted = await storage.isUserMuted(targetUser.id);
       const steals = await storage.getUserSteals(targetUser.id);
 
-      let response = `**User Lookup: ${targetUser.username}** (<@${targetDiscordUser.id}>)\n`;
-      response += `━━━━━━━━━━━━━━━━━━━━━━\n`;
-      response += `Status: ${isBanned ? 'BANNED' : isMuted ? 'MUTED' : 'Active'}\n`;
-      response += `Warnings: ${warnings.filter(w => w.isActive).length}\n`;
-      response += `Steals: ${steals.length}\n`;
-      response += `━━━━━━━━━━━━━━━━━━━━━━\n\n`;
+      const statusText = isBanned ? 'BANNED' : isMuted ? 'MUTED' : 'Active';
+      const statusColor = isBanned ? 0xED4245 : isMuted ? 0xE67E22 : 0x57F287;
+
+      const embed = new EmbedBuilder()
+        .setColor(statusColor)
+        .setTitle(`User Lookup: ${targetUser.username}`)
+        .setThumbnail(targetDiscordUser.displayAvatarURL({ size: 128 }))
+        .addFields(
+          { name: 'Status', value: statusText, inline: true },
+          { name: 'Active Warnings', value: `${warnings.filter(w => w.isActive).length}`, inline: true },
+          { name: 'Total Steals', value: `${steals.length}`, inline: true },
+        );
 
       if (warnings.length > 0) {
-        response += `**Warnings:**\n`;
+        let warnText = '';
         for (const w of warnings.slice(0, 5)) {
-          const date = w.warnedAt ? new Date(w.warnedAt).toLocaleDateString() : 'Unknown';
-          response += `- ${date}: ${w.reason} (by ${w.warnedByUser.username})${w.isActive ? '' : ' [cleared]'}\n`;
+          const date = w.warnedAt ? `<t:${Math.floor(new Date(w.warnedAt).getTime() / 1000)}:d>` : 'Unknown';
+          warnText += `${w.isActive ? '**[Active]**' : '[Cleared]'} ${date} - ${w.reason} (by ${w.warnedByUser.username})\n`;
         }
-        if (warnings.length > 5) response += `...and ${warnings.length - 5} more\n`;
-        response += `\n`;
+        if (warnings.length > 5) warnText += `*...and ${warnings.length - 5} more*\n`;
+        embed.addFields({ name: `Warnings (${warnings.length})`, value: warnText });
       }
 
       if (steals.length > 0) {
-        response += `**Steal History:**\n`;
+        let stealText = '';
         for (const s of steals.slice(0, 5)) {
-          const date = s.createdAt ? new Date(s.createdAt).toLocaleDateString() : 'Unknown';
-          response += `- ${date}: ${s.item}${s.notes ? ` (${s.notes})` : ''} - logged by ${s.staffUser.username}\n`;
+          const date = s.createdAt ? `<t:${Math.floor(new Date(s.createdAt).getTime() / 1000)}:d>` : 'Unknown';
+          const paidTag = s.paid ? '[Paid]' : '**[Not Paid]**';
+          stealText += `${paidTag} ${date} - ${s.item}${s.notes ? ` (${s.notes})` : ''} - by ${s.staffUser.username}\n`;
         }
-        if (steals.length > 5) response += `...and ${steals.length - 5} more\n`;
+        if (steals.length > 5) stealText += `*...and ${steals.length - 5} more*\n`;
+        embed.addFields({ name: `Steal History (${steals.length})`, value: stealText });
       }
 
       if (warnings.length === 0 && steals.length === 0) {
-        response += `No warnings or steals on record.`;
+        embed.addFields({ name: 'Record', value: 'Clean - no warnings or steals on file.' });
       }
 
-      await interaction.reply({ content: response, ephemeral: true });
+      embed.setFooter({ text: `User ID: ${targetDiscordUser.id}` }).setTimestamp();
+      await interaction.reply({ embeds: [embed], ephemeral: true });
     }
 
     if (interaction.commandName === 'modlog') {
@@ -1549,20 +1635,37 @@ async function handleSlashCommand(interaction: any) {
       const logs = await storage.getAuditLogs(Math.min(limit, 25));
 
       if (logs.length === 0) {
-        await interaction.reply({ content: "No moderation actions recorded yet.", ephemeral: true });
+        await interaction.reply({ embeds: [new EmbedBuilder().setColor(0x5865F2).setDescription('No moderation actions recorded yet.')], ephemeral: true });
         return;
       }
 
-      let response = `**Recent Moderation Actions** (${logs.length})\n━━━━━━━━━━━━━━━━━━━━━━\n`;
+      const actionIcons: Record<string, string> = {
+        warn: 'Warning',
+        mute: 'Mute',
+        unmute: 'Unmute',
+        ban: 'Ban',
+        unban: 'Unban',
+        steal_logged: 'Steal Logged',
+      };
+
+      let logText = '';
       for (const log of logs) {
-        const date = log.createdAt ? new Date(log.createdAt).toLocaleDateString() : 'Unknown';
-        const target = log.targetUser ? ` on ${log.targetUser.username}` : '';
+        const date = log.createdAt ? `<t:${Math.floor(new Date(log.createdAt).getTime() / 1000)}:R>` : 'Unknown';
+        const target = log.targetUser ? `<@${log.targetUser.discordId}>` : 'N/A';
         const details = log.details as any;
         const reason = details?.reason ? ` - ${details.reason}` : '';
-        response += `**${log.action.toUpperCase()}**${target} by ${log.admin.username} (${date})${reason}\n`;
+        const actionName = actionIcons[log.action] || log.action.toUpperCase();
+        logText += `**${actionName}** on ${target} by ${log.admin.username} ${date}${reason}\n`;
       }
 
-      await interaction.reply({ content: response, ephemeral: true });
+      const embed = new EmbedBuilder()
+        .setColor(0x5865F2)
+        .setTitle('Recent Moderation Actions')
+        .setDescription(logText)
+        .setFooter({ text: `Showing ${logs.length} entries` })
+        .setTimestamp();
+
+      await interaction.reply({ embeds: [embed], ephemeral: true });
     }
 
     return;
