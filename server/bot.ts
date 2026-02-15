@@ -1612,14 +1612,19 @@ async function handleSlashCommand(interaction: any) {
       }
 
       if (steals.length > 0) {
+        const paidCount = steals.filter(s => s.paid).length;
+        const unpaidCount = steals.length - paidCount;
         let stealText = '';
         for (const s of steals.slice(0, 5)) {
           const date = s.createdAt ? `<t:${Math.floor(new Date(s.createdAt).getTime() / 1000)}:d>` : 'Unknown';
-          const paidTag = s.paid ? '[Paid]' : '**[Not Paid]**';
-          stealText += `${paidTag} ${date} - ${s.item}${s.notes ? ` (${s.notes})` : ''} - by ${s.staffUser.username}\n`;
+          const paidTag = s.paid ? '\u2705 PAID' : '\u274C NOT PAID';
+          stealText += `${paidTag} | ${s.item}${s.notes ? ` - ${s.notes}` : ''}\n\u2514 ${date} \u2022 Logged by ${s.staffUser.username}\n\n`;
         }
         if (steals.length > 5) stealText += `*...and ${steals.length - 5} more*\n`;
-        embed.addFields({ name: `Steal History (${steals.length})`, value: stealText });
+        const summaryLine = `Total: ${steals.length} | Paid: ${paidCount} | Unpaid: ${unpaidCount}`;
+        embed.addFields(
+          { name: `Steal History (${steals.length})`, value: `\`\`\`${summaryLine}\`\`\`\n${stealText}` },
+        );
       }
 
       if (warnings.length === 0 && steals.length === 0) {
