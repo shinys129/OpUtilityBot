@@ -66,6 +66,9 @@ export interface IStorage {
   addSteal(userId: number, staffId: number, item: string, paid: boolean, notes?: string): Promise<StealLog>;
   getUserSteals(userId: number): Promise<(StealLog & { user: User; staffUser: User })[]>;
   getAllSteals(): Promise<(StealLog & { user: User; staffUser: User })[]>;
+  removeWarning(warningId: number): Promise<void>;
+  removeSteal(stealId: number): Promise<void>;
+  clearUserRecord(userId: number): Promise<void>;
 
   createAuditLog(adminId: number, action: string, targetUserId?: number, details?: any): Promise<AuditLog>;
   getAuditLogs(limit?: number): Promise<(AuditLog & { admin: User; targetUser?: User })[]>;
@@ -349,6 +352,21 @@ export class DatabaseStorage implements IStorage {
       user: userMap.get(r.userId)!,
       staffUser: userMap.get(r.staffId)!,
     })).filter(r => r.user && r.staffUser);
+  }
+
+  async removeWarning(warningId: number): Promise<void> {
+    await db.delete(userWarnings).where(eq(userWarnings.id, warningId));
+  }
+
+  async removeSteal(stealId: number): Promise<void> {
+    await db.delete(stealLogs).where(eq(stealLogs.id, stealId));
+  }
+
+  async clearUserRecord(userId: number): Promise<void> {
+    await db.delete(userWarnings).where(eq(userWarnings.userId, userId));
+    await db.delete(stealLogs).where(eq(stealLogs.userId, userId));
+    await db.delete(bannedUsers).where(eq(bannedUsers.userId, userId));
+    await db.delete(userMutes).where(eq(userMutes.userId, userId));
   }
 
   async createAuditLog(adminId: number, action: string, targetUserId?: number, details?: any): Promise<AuditLog> {

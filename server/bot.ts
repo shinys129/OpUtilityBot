@@ -8,6 +8,26 @@ const ADMIN_ROLE_ID = '1402994392608018553';
 // Moderation log channel - all mod actions get logged here
 const MOD_LOG_CHANNEL_ID = '1413942157219205271';
 
+function parseDuration(input: string): { minutes: number; display: string } | null {
+  const match = input.trim().match(/^(\d+)\s*(m|min|mins|minutes?|h|hrs?|hours?|d|days?)$/i);
+  if (!match) {
+    const num = parseInt(input);
+    if (!isNaN(num) && num > 0) return { minutes: num, display: `${num}m` };
+    return null;
+  }
+  const value = parseInt(match[1]);
+  const unit = match[2].toLowerCase();
+  if (value <= 0) return null;
+
+  if (unit.startsWith('d')) {
+    return { minutes: value * 1440, display: `${value}d` };
+  } else if (unit.startsWith('h')) {
+    return { minutes: value * 60, display: `${value}h` };
+  } else {
+    return { minutes: value, display: `${value}m` };
+  }
+}
+
 async function sendModLog(client: Client, embed: EmbedBuilder) {
   try {
     const channel = await client.channels.fetch(MOD_LOG_CHANNEL_ID);
@@ -198,7 +218,7 @@ async function registerSlashCommands() {
        options: [
          { name: 'user', description: 'The user to mute.', type: 6, required: true },
          { name: 'reason', description: 'Reason for the mute.', type: 3, required: true },
-         { name: 'duration', description: 'Duration in minutes (leave empty for indefinite).', type: 4, required: false },
+         { name: 'duration', description: 'Duration e.g. 30m, 2h, 7d (leave empty for indefinite).', type: 3, required: false },
        ],
      });
 
@@ -216,7 +236,7 @@ async function registerSlashCommands() {
        options: [
          { name: 'user', description: 'The user to ban.', type: 6, required: true },
          { name: 'reason', description: 'Reason for the ban.', type: 3, required: true },
-         { name: 'duration', description: 'Duration in days (leave empty for permanent).', type: 4, required: false },
+         { name: 'duration', description: 'Duration e.g. 7d, 30d (leave empty for permanent).', type: 3, required: false },
        ],
      });
 
@@ -240,11 +260,44 @@ async function registerSlashCommands() {
      });
 
      await client.application.commands.create({
+       name: 'remove',
+       description: 'Remove a warning, steal, or clear a user\'s full record (staff only).',
+       options: [
+         {
+           name: 'warn',
+           description: 'Remove a specific warning by ID.',
+           type: 1,
+           options: [
+             { name: 'user', description: 'The user whose warning to remove.', type: 6, required: true },
+             { name: 'id', description: 'Warning ID to remove (use /lookup to find IDs).', type: 4, required: true },
+           ],
+         },
+         {
+           name: 'steal',
+           description: 'Remove a specific steal by ID.',
+           type: 1,
+           options: [
+             { name: 'user', description: 'The user whose steal to remove.', type: 6, required: true },
+             { name: 'id', description: 'Steal ID to remove (use /lookup to find IDs).', type: 4, required: true },
+           ],
+         },
+         {
+           name: 'record',
+           description: 'Clear a user\'s entire record (warnings, steals, bans, mutes).',
+           type: 1,
+           options: [
+             { name: 'user', description: 'The user whose record to clear.', type: 6, required: true },
+           ],
+         },
+       ],
+     });
+
+     await client.application.commands.create({
        name: 'timeout',
        description: 'Timeout a user in Discord (staff only).',
        options: [
          { name: 'user', description: 'The user to timeout.', type: 6, required: true },
-         { name: 'duration', description: 'Duration in minutes.', type: 4, required: true },
+         { name: 'duration', description: 'Duration e.g. 30m, 2h, 7d.', type: 3, required: true },
          { name: 'reason', description: 'Reason for the timeout.', type: 3, required: true },
        ],
      });
@@ -1373,7 +1426,7 @@ async function handleSlashCommand(interaction: any) {
 
   // ===== MODERATION COMMANDS =====
 
-  const moderationCommands = ['warn', 'mute', 'unmute', 'ban', 'unban', 'steal', 'timeout', 'lookup', 'modlog'];
+  const moderationCommands = ['warn', 'mute', 'unmute', 'ban', 'unban', 'steal', 'timeout', 'remove', 'lookup', 'modlog'];
   if (moderationCommands.includes(interaction.commandName)) {
     let isStaff = false;
     const dbAdminRoleId = await storage.getAdminRole();
@@ -1427,13 +1480,25 @@ async function handleSlashCommand(interaction: any) {
     if (interaction.commandName === 'mute') {
       const targetDiscordUser = interaction.options.getUser('user');
       const reason = interaction.options.getString('reason');
-      const durationMinutes = interaction.options.getInteger('duration');
+      const durationInput = interaction.options.getString('duration');
       const targetUser = await storage.getOrCreateUser(targetDiscordUser.id, targetDiscordUser.username);
+
+      let durationMinutes: number | null = null;
+      let durationText = 'Indefinite';
+      if (durationInput) {
+        const parsed = parseDuration(durationInput);
+        if (!parsed) {
+          await interaction.reply({ embeds: [new EmbedBuilder().setColor(0xED4245).setDescription('Invalid duration format. Use e.g. `30m`, `2h`, `7d`.')], ephemeral: true });
+          return;
+        }
+        durationMinutes = parsed.minutes;
+        durationText = parsed.display;
+      }
 
       const expiresAt = durationMinutes ? new Date(Date.now() + durationMinutes * 60 * 1000) : undefined;
 
       await storage.muteUser(targetUser.id, reason, staffUser.id, expiresAt);
-      await storage.createAuditLog(staffUser.id, 'mute', targetUser.id, { reason, durationMinutes });
+      await storage.createAuditLog(staffUser.id, 'mute', targetUser.id, { reason, duration: durationText });
 
       try {
         const guild = interaction.guild;
@@ -1444,8 +1509,6 @@ async function handleSlashCommand(interaction: any) {
       } catch (e) {
         console.error("Failed to apply Discord timeout:", e);
       }
-
-      const durationText = durationMinutes ? `${durationMinutes} minutes` : 'Indefinite';
       const embed = new EmbedBuilder()
         .setColor(0xE67E22)
         .setTitle('User Muted')
@@ -1509,7 +1572,7 @@ async function handleSlashCommand(interaction: any) {
     if (interaction.commandName === 'ban') {
       const targetDiscordUser = interaction.options.getUser('user');
       const reason = interaction.options.getString('reason');
-      const durationDays = interaction.options.getInteger('duration');
+      const durationInput = interaction.options.getString('duration');
       const targetUser = await storage.getOrCreateUser(targetDiscordUser.id, targetDiscordUser.username);
 
       const alreadyBanned = await storage.isUserBanned(targetUser.id);
@@ -1518,12 +1581,20 @@ async function handleSlashCommand(interaction: any) {
         return;
       }
 
-      const expiresAt = durationDays ? new Date(Date.now() + durationDays * 24 * 60 * 60 * 1000) : undefined;
+      let durationText = 'Permanent';
+      let expiresAt: Date | undefined;
+      if (durationInput) {
+        const parsed = parseDuration(durationInput);
+        if (!parsed) {
+          await interaction.reply({ embeds: [new EmbedBuilder().setColor(0xED4245).setDescription('Invalid duration format. Use e.g. `7d`, `30d`, `24h`.')], ephemeral: true });
+          return;
+        }
+        expiresAt = new Date(Date.now() + parsed.minutes * 60 * 1000);
+        durationText = parsed.display;
+      }
 
       await storage.banUser(targetUser.id, reason, staffUser.id, expiresAt);
-      await storage.createAuditLog(staffUser.id, 'ban', targetUser.id, { reason, durationDays });
-
-      const durationText = durationDays ? `${durationDays} days` : 'Permanent';
+      await storage.createAuditLog(staffUser.id, 'ban', targetUser.id, { reason, duration: durationText });
       const embed = new EmbedBuilder()
         .setColor(0xED4245)
         .setTitle('User Banned from Org')
@@ -1606,8 +1677,14 @@ async function handleSlashCommand(interaction: any) {
 
     if (interaction.commandName === 'timeout') {
       const targetDiscordUser = interaction.options.getUser('user');
-      const durationMinutes = interaction.options.getInteger('duration');
+      const durationInput = interaction.options.getString('duration');
       const reason = interaction.options.getString('reason');
+
+      const parsed = parseDuration(durationInput);
+      if (!parsed) {
+        await interaction.reply({ embeds: [new EmbedBuilder().setColor(0xED4245).setDescription('Invalid duration format. Use e.g. `30m`, `2h`, `7d`.')], ephemeral: true });
+        return;
+      }
 
       try {
         const guild = interaction.guild;
@@ -1617,25 +1694,13 @@ async function handleSlashCommand(interaction: any) {
         }
 
         const member = await guild.members.fetch(targetDiscordUser.id);
-        await member.timeout(durationMinutes * 60 * 1000, reason);
+        await member.timeout(parsed.minutes * 60 * 1000, reason);
 
         const targetUser = await storage.getOrCreateUser(targetDiscordUser.id, targetDiscordUser.username);
-        await storage.createAuditLog(staffUser.id, 'timeout', targetUser.id, { reason, durationMinutes });
+        await storage.createAuditLog(staffUser.id, 'timeout', targetUser.id, { reason, duration: parsed.display });
 
-        let durationText = '';
-        if (durationMinutes >= 1440) {
-          const days = Math.floor(durationMinutes / 1440);
-          const remainingHours = Math.floor((durationMinutes % 1440) / 60);
-          durationText = remainingHours > 0 ? `${days}d ${remainingHours}h` : `${days}d`;
-        } else if (durationMinutes >= 60) {
-          const hours = Math.floor(durationMinutes / 60);
-          const remainingMins = durationMinutes % 60;
-          durationText = remainingMins > 0 ? `${hours}h ${remainingMins}m` : `${hours}h`;
-        } else {
-          durationText = `${durationMinutes}m`;
-        }
-
-        const expiresTimestamp = Math.floor((Date.now() + durationMinutes * 60 * 1000) / 1000);
+        const durationText = parsed.display;
+        const expiresTimestamp = Math.floor((Date.now() + parsed.minutes * 60 * 1000) / 1000);
 
         const embed = new EmbedBuilder()
           .setColor(0xE67E22)
@@ -1656,6 +1721,97 @@ async function handleSlashCommand(interaction: any) {
       } catch (e) {
         console.error("Failed to timeout user:", e);
         await interaction.reply({ embeds: [new EmbedBuilder().setColor(0xED4245).setDescription('Failed to timeout user. Make sure the bot has the required permissions and the user can be timed out.')], ephemeral: true });
+      }
+    }
+
+    if (interaction.commandName === 'remove') {
+      const subcommand = interaction.options.getSubcommand();
+      const targetDiscordUser = interaction.options.getUser('user');
+      const targetUser = await storage.getUserByDiscordId(targetDiscordUser.id);
+
+      if (!targetUser) {
+        await interaction.reply({ embeds: [new EmbedBuilder().setColor(0xED4245).setDescription('User not found in the system.')], ephemeral: true });
+        return;
+      }
+
+      if (subcommand === 'warn') {
+        const warningId = interaction.options.getInteger('id');
+        const warnings = await storage.getUserWarnings(targetUser.id);
+        const warning = warnings.find(w => w.id === warningId);
+
+        if (!warning) {
+          await interaction.reply({ embeds: [new EmbedBuilder().setColor(0xED4245).setDescription(`Warning #${warningId} not found for this user.`)], ephemeral: true });
+          return;
+        }
+
+        await storage.removeWarning(warningId);
+        await storage.createAuditLog(staffUser.id, 'remove_warning', targetUser.id, { warningId, reason: warning.reason });
+
+        const embed = new EmbedBuilder()
+          .setColor(0x3498DB)
+          .setTitle('Warning Removed')
+          .setThumbnail(targetDiscordUser.displayAvatarURL({ size: 64 }))
+          .addFields(
+            { name: 'User', value: `<@${targetDiscordUser.id}>`, inline: true },
+            { name: 'Removed By', value: `<@${interaction.user.id}>`, inline: true },
+            { name: 'Warning ID', value: `#${warningId}`, inline: true },
+            { name: 'Original Reason', value: warning.reason || 'N/A' },
+          )
+          .setFooter({ text: `User ID: ${targetDiscordUser.id}` })
+          .setTimestamp();
+
+        await interaction.reply({ embeds: [embed] });
+        await sendModLog(interaction.client, embed);
+      }
+
+      if (subcommand === 'steal') {
+        const stealId = interaction.options.getInteger('id');
+        const steals = await storage.getUserSteals(targetUser.id);
+        const steal = steals.find(s => s.id === stealId);
+
+        if (!steal) {
+          await interaction.reply({ embeds: [new EmbedBuilder().setColor(0xED4245).setDescription(`Steal #${stealId} not found for this user.`)], ephemeral: true });
+          return;
+        }
+
+        await storage.removeSteal(stealId);
+        await storage.createAuditLog(staffUser.id, 'remove_steal', targetUser.id, { stealId, item: steal.item });
+
+        const embed = new EmbedBuilder()
+          .setColor(0x3498DB)
+          .setTitle('Steal Record Removed')
+          .setThumbnail(targetDiscordUser.displayAvatarURL({ size: 64 }))
+          .addFields(
+            { name: 'User', value: `<@${targetDiscordUser.id}>`, inline: true },
+            { name: 'Removed By', value: `<@${interaction.user.id}>`, inline: true },
+            { name: 'Steal ID', value: `#${stealId}`, inline: true },
+            { name: 'Item', value: steal.item },
+          )
+          .setFooter({ text: `User ID: ${targetDiscordUser.id}` })
+          .setTimestamp();
+
+        await interaction.reply({ embeds: [embed] });
+        await sendModLog(interaction.client, embed);
+      }
+
+      if (subcommand === 'record') {
+        await storage.clearUserRecord(targetUser.id);
+        await storage.createAuditLog(staffUser.id, 'clear_record', targetUser.id, {});
+
+        const embed = new EmbedBuilder()
+          .setColor(0xED4245)
+          .setTitle('Full Record Cleared')
+          .setThumbnail(targetDiscordUser.displayAvatarURL({ size: 64 }))
+          .addFields(
+            { name: 'User', value: `<@${targetDiscordUser.id}>`, inline: true },
+            { name: 'Cleared By', value: `<@${interaction.user.id}>`, inline: true },
+          )
+          .setDescription('All warnings, steals, bans, and mutes have been removed.')
+          .setFooter({ text: `User ID: ${targetDiscordUser.id}` })
+          .setTimestamp();
+
+        await interaction.reply({ embeds: [embed] });
+        await sendModLog(interaction.client, embed);
       }
     }
 
@@ -1690,7 +1846,7 @@ async function handleSlashCommand(interaction: any) {
         let warnText = '';
         for (const w of warnings.slice(0, 5)) {
           const date = w.warnedAt ? `<t:${Math.floor(new Date(w.warnedAt).getTime() / 1000)}:d>` : 'Unknown';
-          warnText += `${w.isActive ? '**[Active]**' : '[Cleared]'} ${date} - ${w.reason} (by ${w.warnedByUser.username})\n`;
+          warnText += `\`#${w.id}\` ${w.isActive ? '**[Active]**' : '[Cleared]'} ${date} - ${w.reason} (by ${w.warnedByUser.username})\n`;
         }
         if (warnings.length > 5) warnText += `*...and ${warnings.length - 5} more*\n`;
         embed.addFields({ name: `Warnings (${warnings.length})`, value: warnText });
@@ -1703,7 +1859,7 @@ async function handleSlashCommand(interaction: any) {
         for (const s of steals.slice(0, 5)) {
           const date = s.createdAt ? `<t:${Math.floor(new Date(s.createdAt).getTime() / 1000)}:d>` : 'Unknown';
           const paidTag = s.paid ? '\u2705 PAID' : '\u274C NOT PAID';
-          stealText += `${paidTag} | ${s.item}${s.notes ? ` - ${s.notes}` : ''}\n\u2514 ${date} \u2022 Logged by ${s.staffUser.username}\n\n`;
+          stealText += `\`#${s.id}\` ${paidTag} | ${s.item}${s.notes ? ` - ${s.notes}` : ''}\n\u2514 ${date} \u2022 Logged by ${s.staffUser.username}\n\n`;
         }
         if (steals.length > 5) stealText += `*...and ${steals.length - 5} more*\n`;
         const summaryLine = `Total: ${steals.length} | Paid: ${paidCount} | Unpaid: ${unpaidCount}`;
