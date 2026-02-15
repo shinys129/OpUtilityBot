@@ -121,9 +121,14 @@ A robust system for reloading and refreshing Discord embeds that may get stuck o
 - `/unmute <user>` - Remove mute
 - `/ban <user> <reason> [duration]` - Ban from org (optional duration in days)
 - `/unban <user>` - Remove ban
-- `/steal <user> <item> [notes]` - Log a steal infraction
+- `/timeout <user> <duration> <reason>` - Discord timeout (duration in minutes)
+- `/steal <user> <item> <paid> [notes]` - Log a steal infraction with paid status
 - `/lookup <user>` - View full user record (warnings, steals, ban/mute status)
 - `/modlog [limit]` - View recent moderation actions
+
+### Moderation Log Channel
+- All moderation actions (warn, mute, unmute, ban, unban, timeout, steal) are automatically logged to channel `1413942157219205271`
+- Each action sends the same embed to the log channel for a permanent record
 
 ### Database Tables (Moderation)
 - `user_warnings` - Warning records with reason, staff who issued, active status

@@ -5,6 +5,20 @@ import { storage } from "./storage";
 // Admin Role ID that can use admin commands
 const ADMIN_ROLE_ID = '1402994392608018553';
 
+// Moderation log channel - all mod actions get logged here
+const MOD_LOG_CHANNEL_ID = '1413942157219205271';
+
+async function sendModLog(client: Client, embed: EmbedBuilder) {
+  try {
+    const channel = await client.channels.fetch(MOD_LOG_CHANNEL_ID);
+    if (channel && channel.isTextBased()) {
+      await (channel as TextChannel).send({ embeds: [embed] });
+    }
+  } catch (e) {
+    console.error("Failed to send mod log:", e);
+  }
+}
+
 // Constants for Category Configuration
 const CATEGORIES = {
   RARES: { name: 'Rares', range: '1-23' },
@@ -222,6 +236,16 @@ async function registerSlashCommands() {
          { name: 'item', description: 'What was stolen.', type: 3, required: true },
          { name: 'paid', description: 'Did they pay for it?', type: 5, required: true },
          { name: 'notes', description: 'Additional notes.', type: 3, required: false },
+       ],
+     });
+
+     await client.application.commands.create({
+       name: 'timeout',
+       description: 'Timeout a user in Discord (staff only).',
+       options: [
+         { name: 'user', description: 'The user to timeout.', type: 6, required: true },
+         { name: 'duration', description: 'Duration in minutes.', type: 4, required: true },
+         { name: 'reason', description: 'Reason for the timeout.', type: 3, required: true },
        ],
      });
 
@@ -1349,7 +1373,7 @@ async function handleSlashCommand(interaction: any) {
 
   // ===== MODERATION COMMANDS =====
 
-  const moderationCommands = ['warn', 'mute', 'unmute', 'ban', 'unban', 'steal', 'lookup', 'modlog'];
+  const moderationCommands = ['warn', 'mute', 'unmute', 'ban', 'unban', 'steal', 'timeout', 'lookup', 'modlog'];
   if (moderationCommands.includes(interaction.commandName)) {
     let isStaff = false;
     const dbAdminRoleId = await storage.getAdminRole();
@@ -1397,6 +1421,7 @@ async function handleSlashCommand(interaction: any) {
         .setTimestamp();
 
       await interaction.reply({ embeds: [embed] });
+      await sendModLog(interaction.client, embed);
     }
 
     if (interaction.commandName === 'mute') {
@@ -1435,6 +1460,7 @@ async function handleSlashCommand(interaction: any) {
         .setTimestamp();
 
       await interaction.reply({ embeds: [embed] });
+      await sendModLog(interaction.client, embed);
     }
 
     if (interaction.commandName === 'unmute') {
@@ -1477,6 +1503,7 @@ async function handleSlashCommand(interaction: any) {
         .setTimestamp();
 
       await interaction.reply({ embeds: [embed] });
+      await sendModLog(interaction.client, embed);
     }
 
     if (interaction.commandName === 'ban') {
@@ -1511,6 +1538,7 @@ async function handleSlashCommand(interaction: any) {
         .setTimestamp();
 
       await interaction.reply({ embeds: [embed] });
+      await sendModLog(interaction.client, embed);
     }
 
     if (interaction.commandName === 'unban') {
@@ -1543,6 +1571,7 @@ async function handleSlashCommand(interaction: any) {
         .setTimestamp();
 
       await interaction.reply({ embeds: [embed] });
+      await sendModLog(interaction.client, embed);
     }
 
     if (interaction.commandName === 'steal') {
@@ -1572,6 +1601,62 @@ async function handleSlashCommand(interaction: any) {
       embed.setFooter({ text: `User ID: ${targetDiscordUser.id}` }).setTimestamp();
 
       await interaction.reply({ embeds: [embed] });
+      await sendModLog(interaction.client, embed);
+    }
+
+    if (interaction.commandName === 'timeout') {
+      const targetDiscordUser = interaction.options.getUser('user');
+      const durationMinutes = interaction.options.getInteger('duration');
+      const reason = interaction.options.getString('reason');
+
+      try {
+        const guild = interaction.guild;
+        if (!guild) {
+          await interaction.reply({ embeds: [new EmbedBuilder().setColor(0xED4245).setDescription('This command can only be used in a server.')], ephemeral: true });
+          return;
+        }
+
+        const member = await guild.members.fetch(targetDiscordUser.id);
+        await member.timeout(durationMinutes * 60 * 1000, reason);
+
+        const targetUser = await storage.getOrCreateUser(targetDiscordUser.id, targetDiscordUser.username);
+        await storage.createAuditLog(staffUser.id, 'timeout', targetUser.id, { reason, durationMinutes });
+
+        let durationText = '';
+        if (durationMinutes >= 1440) {
+          const days = Math.floor(durationMinutes / 1440);
+          const remainingHours = Math.floor((durationMinutes % 1440) / 60);
+          durationText = remainingHours > 0 ? `${days}d ${remainingHours}h` : `${days}d`;
+        } else if (durationMinutes >= 60) {
+          const hours = Math.floor(durationMinutes / 60);
+          const remainingMins = durationMinutes % 60;
+          durationText = remainingMins > 0 ? `${hours}h ${remainingMins}m` : `${hours}h`;
+        } else {
+          durationText = `${durationMinutes}m`;
+        }
+
+        const expiresTimestamp = Math.floor((Date.now() + durationMinutes * 60 * 1000) / 1000);
+
+        const embed = new EmbedBuilder()
+          .setColor(0xE67E22)
+          .setTitle('User Timed Out')
+          .setThumbnail(targetDiscordUser.displayAvatarURL({ size: 64 }))
+          .addFields(
+            { name: 'User', value: `<@${targetDiscordUser.id}>`, inline: true },
+            { name: 'Timed Out By', value: `<@${interaction.user.id}>`, inline: true },
+            { name: 'Duration', value: durationText, inline: true },
+            { name: 'Expires', value: `<t:${expiresTimestamp}:R>`, inline: true },
+            { name: 'Reason', value: reason },
+          )
+          .setFooter({ text: `User ID: ${targetDiscordUser.id}` })
+          .setTimestamp();
+
+        await interaction.reply({ embeds: [embed] });
+        await sendModLog(interaction.client, embed);
+      } catch (e) {
+        console.error("Failed to timeout user:", e);
+        await interaction.reply({ embeds: [new EmbedBuilder().setColor(0xED4245).setDescription('Failed to timeout user. Make sure the bot has the required permissions and the user can be timed out.')], ephemeral: true });
+      }
     }
 
     if (interaction.commandName === 'lookup') {
